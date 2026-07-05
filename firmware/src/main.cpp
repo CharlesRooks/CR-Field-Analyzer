@@ -1,45 +1,36 @@
 #include <Arduino.h>
+#include <LilyGo_AMOLED.h>
+#include <LV_Helper.h>
+#include <lvgl.h>
 
-uint32_t counter = 0;
+LilyGo_Class amoled;
 
 void setup()
 {
     Serial.begin(115200);
-    delay(3000);
+    delay(1000);
 
-    Serial.println();
-    Serial.println("========================================");
-    Serial.println("CR Field Analyzer - Loop Counter Test");
-    Serial.println("========================================");
+    Serial.println("SentinelOS - LilyGO AMOLED test");
+
+    if (!amoled.begin()) {
+        Serial.println("amoled.begin() failed");
+        while (true) delay(1000);
+    }
+
+    Serial.print("Board: ");
+    Serial.println(amoled.getName());
+
+    beginLvglHelper(amoled);
+
+    lv_obj_t *label = lv_label_create(lv_scr_act());
+    lv_label_set_text(label, "CR Field Analyzer\nSentinelOS");
+    lv_obj_center(label);
+
+    Serial.println("Display initialized.");
 }
 
 void loop()
 {
-    counter++;
-
-    Serial.println();
-    Serial.println("----------------------------------------");
-
-    Serial.print("Loop #: ");
-    Serial.println(counter);
-
-    Serial.print("Uptime: ");
-    Serial.print(millis());
-    Serial.println(" ms");
-
-    Serial.print("Chip Model: ");
-    Serial.println(ESP.getChipModel());
-
-    Serial.print("Flash: ");
-    Serial.print(ESP.getFlashChipSize() / (1024 * 1024));
-    Serial.println(" MB");
-
-    Serial.print("PSRAM: ");
-    Serial.print(ESP.getPsramSize() / (1024 * 1024));
-    Serial.println(" MB");
-
-    Serial.print("Free Heap: ");
-    Serial.println(ESP.getFreeHeap());
-
-    delay(3000);
+    lv_task_handler();
+    delay(5);
 }
