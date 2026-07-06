@@ -1,6 +1,14 @@
 #pragma once
 
-#include "../Screens/DashboardScreen.h"
+#include "../Managers/NavigationManager.h"
+#include <stdint.h>
+
+enum class AppState
+{
+    Boot,
+    Splash,
+    Running
+};
 
 class SentinelOS
 {
@@ -9,5 +17,10 @@ public:
     void Update();
 
 private:
-    DashboardScreen dashboard;
+    AppState currentState = AppState::Boot;
+    uint32_t stateStartMs = 0;
+
+    NavigationManager navigation;
+
+    void ChangeState(AppState newState);
 };

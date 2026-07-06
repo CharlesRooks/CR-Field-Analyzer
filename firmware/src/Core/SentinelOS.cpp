@@ -29,17 +29,52 @@ void SentinelOS::Begin()
 
     beginLvglHelper(amoled);
 
-    SplashScreen::Show();
-    delay(2500);
-
-    dashboard.Show();
-
-    Serial.println("Dashboard Loaded.");
+    ChangeState(AppState::Splash);
 }
 
 void SentinelOS::Update()
 {
-    dashboard.Update();
+    switch (currentState)
+    {
+        case AppState::Splash:
+            if (millis() - stateStartMs >= 2500)
+            {
+                ChangeState(AppState::Running);
+            }
+            break;
+
+        case AppState::Running:
+            navigation.Update();
+            break;
+
+        case AppState::Boot:
+        default:
+            break;
+    }
+
     lv_timer_handler();
     delay(5);
+}
+
+void SentinelOS::ChangeState(AppState newState)
+{
+    currentState = newState;
+    stateStartMs = millis();
+
+    switch (currentState)
+    {
+        case AppState::Splash:
+            SplashScreen::Show();
+            Serial.println("State: Splash");
+            break;
+
+        case AppState::Running:
+            navigation.Show(ScreenID::Dashboard);
+            Serial.println("State: Running");
+            break;
+
+        case AppState::Boot:
+        default:
+            break;
+    }
 }

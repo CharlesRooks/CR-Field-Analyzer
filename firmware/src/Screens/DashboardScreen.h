@@ -1,13 +1,15 @@
 #pragma once
 
+#include "../Core/Screen.h"
 #include <lvgl.h>
 #include <stdint.h>
 
-class DashboardScreen
+class DashboardScreen : public Screen
 {
 public:
-    void Show();
-    void Update();
+    void Show() override;
+    void Update() override;
+    void Hide() override;
 
 private:
     lv_obj_t *statusLabel = nullptr;

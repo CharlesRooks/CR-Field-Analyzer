@@ -55,3 +55,7 @@ void DashboardScreen::Update()
 
     lv_label_set_text(statusLabel, buffer);
 }
+void DashboardScreen::Hide()
+{
+    lv_obj_clean(lv_scr_act());
+}
