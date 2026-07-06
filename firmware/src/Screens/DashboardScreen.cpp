@@ -2,6 +2,7 @@
 #include "../UI/Theme.h"
 #include <Arduino.h>
 #include <lvgl.h>
+#include "../Services/System/SystemService.h"
 
 void DashboardScreen::Show()
 {
@@ -35,11 +36,6 @@ void DashboardScreen::Update()
     lastUpdateMs = millis();
     updateCounter++;
 
-    uint32_t totalSeconds = millis() / 1000;
-    uint32_t hours = totalSeconds / 3600;
-    uint32_t minutes = (totalSeconds % 3600) / 60;
-    uint32_t seconds = totalSeconds % 60;
-
     char buffer[256];
 
     snprintf(buffer, sizeof(buffer),
@@ -49,14 +45,12 @@ void DashboardScreen::Update()
              "Flash     : %d MB\n"
              "PSRAM     : %s\n"
              "Heap      : %u KB\n"
-             "Uptime    : %02lu:%02lu:%02lu\n"
+             "Uptime    : %s\n"
              "Updates   : %lu",
-             ESP.getFlashChipSize() / (1024 * 1024),
-             psramFound() ? "Ready" : "Not Found",
-             ESP.getFreeHeap() / 1024,
-             hours,
-             minutes,
-             seconds,
+             SystemService::GetFlashSizeMB(),
+             SystemService::HasPSRAM() ? "Ready" : "Not Found",
+             SystemService::GetFreeHeapKB(),
+             SystemService::GetFormattedUptime().c_str(),
              updateCounter);
 
     lv_label_set_text(statusLabel, buffer);
