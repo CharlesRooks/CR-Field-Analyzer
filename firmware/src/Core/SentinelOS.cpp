@@ -6,7 +6,6 @@
 #include <lvgl.h>
 
 #include "../Screens/SplashScreen.h"
-#include "../Screens/DashboardScreen.h"
 
 static LilyGo_Class amoled;
 
@@ -33,13 +32,14 @@ void SentinelOS::Begin()
     SplashScreen::Show();
     delay(2500);
 
-    DashboardScreen::Show();
+    dashboard.Show();
 
     Serial.println("Dashboard Loaded.");
 }
 
 void SentinelOS::Update()
 {
+    dashboard.Update();
     lv_timer_handler();
     delay(5);
 }
