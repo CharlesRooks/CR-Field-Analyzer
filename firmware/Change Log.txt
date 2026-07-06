@@ -1,0 +1,18 @@
+v0.1
+------
+• Hardware bring-up
+• Display operational
+• LVGL integrated
+
+v0.2
+------
+• Splash screen
+• Dashboard
+• AMOLED dark theme
+• Project cleanup
+
+v0.3
+------
+• Modular architecture
+• UI Manager
+• Screen Manager
