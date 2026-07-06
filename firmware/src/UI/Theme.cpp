@@ -25,6 +25,11 @@ namespace Theme
     void PrepareScreen()
     {
         lv_obj_clean(lv_scr_act());
+
+        lv_obj_clear_flag(lv_scr_act(), LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_set_scrollbar_mode(lv_scr_act(), LV_SCROLLBAR_MODE_OFF);
+
         lv_obj_set_style_bg_color(lv_scr_act(), Background(), 0);
         lv_obj_set_style_bg_opa(lv_scr_act(), LV_OPA_COVER, 0);
     }

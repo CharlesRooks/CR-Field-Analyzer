@@ -12,7 +12,8 @@ static LilyGo_Class amoled;
 void SentinelOS::Begin()
 {
     Serial.begin(115200);
-    delay(1000);
+    delay(3000);
+    Serial.println("BOOT CHECK");
 
     Serial.println();
     Serial.println("Starting SentinelOS...");
