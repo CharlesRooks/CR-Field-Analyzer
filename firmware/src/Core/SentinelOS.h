@@ -3,6 +3,7 @@
 #include "../Managers/NavigationManager.h"
 #include <stdint.h>
 #include "../Managers/InputManager.h"
+#include "../UI/ApplicationFrame.h"
 
 enum class AppState
 {
@@ -23,6 +24,7 @@ private:
 
     NavigationManager navigation;
     InputManager input;
+    ApplicationFrame frame;
 
     void ChangeState(AppState newState);
     

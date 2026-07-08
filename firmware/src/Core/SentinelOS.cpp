@@ -85,6 +85,7 @@ void SentinelOS::ChangeState(AppState newState)
             break;
 
         case AppState::Running:
+            frame.Show(ScreenID::Dashboard);
             navigation.Show(ScreenID::Dashboard);
             Serial.println("State: Running");
             break;
