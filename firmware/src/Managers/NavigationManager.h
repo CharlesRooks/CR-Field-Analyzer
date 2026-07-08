@@ -1,25 +1,28 @@
 #pragma once
 
-#include "../Screens/SplashScreen.h"
+#include "../Core/ScreenID.h"
+
 #include "../Screens/DashboardScreen.h"
 #include "../Screens/ScanScreen.h"
 #include "../Screens/ToolsScreen.h"
 #include "../Screens/SettingsScreen.h"
 
-enum class ScreenID
-{
-    Splash,
-    Dashboard,
-    Scan,
-    Tools,
-    Settings
-};
+#include "../UI/Widgets/NavigationBar.h"
 
 class NavigationManager
 {
 public:
     void Show(ScreenID screen);
+
+    void Next();
+    void Previous();
+
     void Update();
+
+    ScreenID Current() const
+    {
+        return current;
+    }
 
 private:
     DashboardScreen dashboard;
@@ -27,5 +30,8 @@ private:
     ToolsScreen tools;
     SettingsScreen settings;
 
-    Screen* currentScreen = nullptr;
+    NavigationBar navigationBar;
+
+    Screen *currentScreen = nullptr;
+    ScreenID current = ScreenID::Dashboard;
 };

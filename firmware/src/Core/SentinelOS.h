@@ -2,6 +2,7 @@
 
 #include "../Managers/NavigationManager.h"
 #include <stdint.h>
+#include "../Managers/InputManager.h"
 
 enum class AppState
 {
@@ -21,6 +22,8 @@ private:
     uint32_t stateStartMs = 0;
 
     NavigationManager navigation;
+    InputManager input;
 
     void ChangeState(AppState newState);
+    
 };

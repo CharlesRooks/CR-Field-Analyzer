@@ -30,6 +30,8 @@ void SentinelOS::Begin()
 
     beginLvglHelper(amoled);
 
+    input.Begin(&amoled);
+
     ChangeState(AppState::Splash);
 }
 
@@ -45,8 +47,21 @@ void SentinelOS::Update()
             break;
 
         case AppState::Running:
+        {
+            InputEvent event = input.Update();
+
+            if (event == InputEvent::SwipeLeft)
+            {
+                navigation.Next();
+            }
+            else if (event == InputEvent::SwipeRight)
+            {
+                navigation.Previous();
+            }
+
             navigation.Update();
             break;
+        }
 
         case AppState::Boot:
         default:

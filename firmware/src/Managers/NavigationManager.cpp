@@ -7,6 +7,8 @@ void NavigationManager::Show(ScreenID screen)
         currentScreen->Hide();
     }
 
+    current = screen;
+
     switch (screen)
     {
         case ScreenID::Dashboard:
@@ -26,10 +28,39 @@ void NavigationManager::Show(ScreenID screen)
             break;
 
         default:
-            return;
+            currentScreen = &dashboard;
+            current = ScreenID::Dashboard;
+            break;
     }
 
     currentScreen->Show();
+
+    navigationBar.Show();
+    navigationBar.SetCurrent(current);
+}
+
+void NavigationManager::Next()
+{
+    int next = static_cast<int>(current) + 1;
+
+    if (next >= static_cast<int>(ScreenID::Count))
+    {
+        next = 0;
+    }
+
+    Show(static_cast<ScreenID>(next));
+}
+
+void NavigationManager::Previous()
+{
+    int previous = static_cast<int>(current) - 1;
+
+    if (previous < 0)
+    {
+        previous = static_cast<int>(ScreenID::Count) - 1;
+    }
+
+    Show(static_cast<ScreenID>(previous));
 }
 
 void NavigationManager::Update()

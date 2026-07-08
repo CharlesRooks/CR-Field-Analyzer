@@ -2,8 +2,9 @@
 
 #include "Screen.h"
 #include "../UI/Theme.h"
-#include "../UI/Widgets/TitleBar.h"
+#include "../UI/Widgets/HeaderBar.h"
 #include <lvgl.h>
+#include "../UI/Widgets/NavigationBar.h"
 
 class Page : public Screen
 {
@@ -25,7 +26,8 @@ public:
 
         CreateContent();
 
-        TitleBar::Draw();
+        HeaderBar::Draw(ScreenID::Dashboard);
+        
     }
 
     void Hide() override

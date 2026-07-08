@@ -35,3 +35,19 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 - Flash size detection.
 - PSRAM enablement.
 - USB CDC serial output.
+
+## v0.3.0 – Navigation Alpha
+
+### Added
+- InputManager framework
+- Swipe gesture recognition
+- Gesture-based page navigation
+- Page content container architecture
+
+### Changed
+- NavigationManager now owns navigation state.
+- Page framework now manages shared UI components.
+
+### Fixed
+- Root screen scrolling disabled.
+- Improved touch gesture recognition for CST touch controller.
