@@ -1,11 +1,18 @@
 #include "NavigationManager.h"
 
+void NavigationManager::Begin(lv_obj_t *area)
+{
+    contentArea = area;
+}
+
 void NavigationManager::Show(ScreenID screen)
 {
-    if (currentScreen != nullptr)
+    if (contentArea == nullptr)
     {
-        currentScreen->Hide();
+        return;
     }
+
+    lv_obj_clean(contentArea);
 
     current = screen;
 
@@ -33,10 +40,7 @@ void NavigationManager::Show(ScreenID screen)
             break;
     }
 
-    currentScreen->Show();
-
-    navigationBar.Show();
-    navigationBar.SetCurrent(current);
+    currentScreen->Show(contentArea);
 }
 
 void NavigationManager::Next()

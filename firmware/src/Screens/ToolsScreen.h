@@ -1,11 +1,12 @@
 #pragma once
 
-#include "../Core/Screen.h"
+#include "../Core/Page.h"
 
-class ToolsScreen : public Screen
+class ToolsScreen : public Page
 {
 public:
-    void Show() override;
     void Update() override;
-    void Hide() override;
+
+protected:
+    void CreateContent() override;
 };

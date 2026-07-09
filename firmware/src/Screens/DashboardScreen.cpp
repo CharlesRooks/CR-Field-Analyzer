@@ -1,7 +1,9 @@
 #include "DashboardScreen.h"
+#include "../UI/Theme.h"
 #include "../Services/System/SystemService.h"
 #include <Arduino.h>
 #include <lvgl.h>
+
 
 void DashboardScreen::CreateContent()
 {

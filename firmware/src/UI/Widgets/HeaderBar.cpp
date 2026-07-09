@@ -7,33 +7,46 @@ static const char *GetPageTitle(ScreenID screen)
 {
     switch (screen)
     {
-        case ScreenID::Dashboard:
-            return "Dashboard";
-
-        case ScreenID::Scan:
-            return "Wi-Fi Scan";
-
-        case ScreenID::Tools:
-            return "Tools";
-
-        case ScreenID::Settings:
-            return "Settings";
-
-        default:
-            return "Dashboard";
+        case ScreenID::Dashboard: return "Dashboard";
+        case ScreenID::Scan:      return "Wi-Fi Scan";
+        case ScreenID::Tools:     return "Tools";
+        case ScreenID::Settings:  return "Settings";
+        default:                  return "Dashboard";
     }
 }
 
-void HeaderBar::Draw(ScreenID current)
+void HeaderBar::Show(ScreenID current)
 {
-    lv_obj_t *brand = lv_label_create(lv_scr_act());
-    lv_label_set_text(brand, "SentinelOS");
-    lv_obj_set_style_text_color(brand, Theme::Accent(), 0);
-    lv_obj_set_style_text_font(brand, &lv_font_montserrat_20, 0);
-    lv_obj_align(brand, LV_ALIGN_TOP_LEFT, 10, 8);
+    
+    if (brandLabel != nullptr)
+    {
+        lv_obj_del(brandLabel);
+        brandLabel = nullptr;
+    }
 
-    lv_obj_t *page = lv_label_create(lv_scr_act());
-    lv_label_set_text(page, GetPageTitle(current));
-    lv_obj_set_style_text_color(page, Theme::Text(), 0);
-    lv_obj_align(page, LV_ALIGN_TOP_LEFT, 10, 36);
+    if (pageLabel != nullptr)
+    {
+        lv_obj_del(pageLabel);
+        pageLabel = nullptr;
+    }
+    
+    brandLabel = lv_label_create(lv_scr_act());
+    lv_label_set_text(brandLabel, "SentinelOS");
+    lv_obj_set_style_text_color(brandLabel, Theme::Accent(), 0);
+    lv_obj_set_style_text_font(brandLabel, &lv_font_montserrat_20, 0);
+    lv_obj_align(brandLabel, LV_ALIGN_TOP_LEFT, 10, 8);
+
+    pageLabel = lv_label_create(lv_scr_act());
+    lv_obj_set_style_text_color(pageLabel, Theme::Text(), 0);
+    lv_obj_align(pageLabel, LV_ALIGN_TOP_LEFT, 10, 36);
+
+    SetCurrent(current);
+}
+
+void HeaderBar::SetCurrent(ScreenID current)
+{
+    if (pageLabel != nullptr)
+    {
+        lv_label_set_text(pageLabel, GetPageTitle(current));
+    }
 }

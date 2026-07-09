@@ -1,17 +1,20 @@
 #pragma once
 
 #include "../Core/ScreenID.h"
+#include "../Core/Page.h"
 
 #include "../Screens/DashboardScreen.h"
 #include "../Screens/ScanScreen.h"
 #include "../Screens/ToolsScreen.h"
 #include "../Screens/SettingsScreen.h"
 
-#include "../UI/Widgets/NavigationBar.h"
+#include <lvgl.h>
 
 class NavigationManager
 {
 public:
+    void Begin(lv_obj_t *contentArea);
+
     void Show(ScreenID screen);
 
     void Next();
@@ -25,13 +28,13 @@ public:
     }
 
 private:
+    lv_obj_t *contentArea = nullptr;
+
     DashboardScreen dashboard;
     ScanScreen scan;
     ToolsScreen tools;
     SettingsScreen settings;
 
-    NavigationBar navigationBar;
-
-    Screen *currentScreen = nullptr;
+    Page *currentScreen = nullptr;
     ScreenID current = ScreenID::Dashboard;
 };

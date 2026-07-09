@@ -5,7 +5,7 @@ void ApplicationFrame::Show(ScreenID currentScreen)
 {
     Theme::PrepareScreen();
 
-    headerBar.Draw(currentScreen);
+    headerBar.Show(currentScreen);
 
     CreateSeparators();
 
@@ -24,7 +24,7 @@ void ApplicationFrame::Show(ScreenID currentScreen)
 
 void ApplicationFrame::SetCurrent(ScreenID currentScreen)
 {
-    headerBar.Draw(currentScreen);
+    headerBar.SetCurrent(currentScreen);
     navigationBar.SetCurrent(currentScreen);
 }
 

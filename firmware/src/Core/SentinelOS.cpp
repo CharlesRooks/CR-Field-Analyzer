@@ -40,11 +40,13 @@ void SentinelOS::Update()
     switch (currentState)
     {
         case AppState::Splash:
+        {
             if (millis() - stateStartMs >= 2500)
             {
                 ChangeState(AppState::Running);
             }
             break;
+        }
 
         case AppState::Running:
         {
@@ -53,10 +55,12 @@ void SentinelOS::Update()
             if (event == InputEvent::SwipeLeft)
             {
                 navigation.Next();
+                frame.SetCurrent(navigation.Current());
             }
             else if (event == InputEvent::SwipeRight)
             {
                 navigation.Previous();
+                frame.SetCurrent(navigation.Current());
             }
 
             navigation.Update();
@@ -86,7 +90,9 @@ void SentinelOS::ChangeState(AppState newState)
 
         case AppState::Running:
             frame.Show(ScreenID::Dashboard);
+            navigation.Begin(frame.GetContentArea());
             navigation.Show(ScreenID::Dashboard);
+            frame.SetCurrent(navigation.Current());
             Serial.println("State: Running");
             break;
 
