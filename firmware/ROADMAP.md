@@ -1,29 +1,119 @@
-Milestone 1
-✔ Hardware Bring-up
+# SentinelOS Roadmap
 
-Milestone 2
-✔ UI Framework
+**Current Version:** v0.4.0 (Adaptive UI Framework)
 
-Milestone 3
-⬜ System Services
+---
 
-Milestone 4
-⬜ Navigation
+## ✅ v0.1.0 – Hardware Bring-up
 
-Milestone 5
-⬜ Battery Monitoring
+- ESP32-S3 initialization
+- AMOLED display
+- Touch controller
+- Power management IC
+- Flash detection
+- PSRAM detection
 
-Milestone 6
-⬜ Wi-Fi Scanner
+**Status:** Complete
 
-Milestone 7
-⬜ Bluetooth Scanner
+---
 
-Milestone 8
-⬜ Environmental Sensors
+## ✅ v0.2.0 – Core UI Framework
 
-Milestone 9
-⬜ Packet Capture
+- Theme engine
+- HeaderBar
+- NavigationBar
+- Page framework
+- ApplicationFrame
+- Screen management
 
-Milestone 10
-⬜ Release Candidate
+**Status:** Complete
+
+---
+
+## ✅ v0.3.0 – Core Services
+
+- SystemService
+- Application state machine
+- NavigationManager
+- InputManager
+- Live dashboard updates
+
+**Status:** Complete
+
+---
+
+## ✅ v0.4.0 – Adaptive UI Framework
+
+- StatusTile widget
+- GridLayout
+- SystemDashboardView
+- Reusable View architecture
+
+**Status:** Complete
+
+---
+
+## ⬜ v0.5.0 – Power Management
+
+- Battery monitoring
+- Battery percentage
+- Charging detection
+- USB power detection
+- Power source identification
+- Power statistics
+- Low battery warnings
+- Sleep mode preparation
+
+---
+
+## ⬜ v0.6.0 – Wi-Fi Scanner
+
+- SSID discovery
+- RSSI
+- Channel
+- Security
+- Vendor lookup
+- Signal quality
+
+---
+
+## ⬜ v0.7.0 – Bluetooth Scanner
+
+- BLE scanning
+- Classic Bluetooth
+- Beacon discovery
+- Manufacturer decoding
+
+---
+
+## ⬜ v0.8.0 – Environmental Monitoring
+
+- Temperature
+- Humidity
+- Pressure
+- Air Quality
+- Environmental dashboard
+
+---
+
+## ⬜ v0.9.0 – Network Analysis
+
+- Packet capture
+- Network discovery
+- LLDP/CDP
+- Ping
+- DNS
+- DHCP
+- Gateway testing
+
+---
+
+## ⬜ v1.0.0 – Field Engineering Toolkit
+
+- IP Camera discovery
+- ONVIF tools
+- PoE diagnostics
+- Digital Concierge validation
+- Cable testing
+- Deployment utilities
+- First production release
