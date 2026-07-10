@@ -30,4 +30,6 @@ public:
 private:
     static LilyGo_AMOLED *board;
     static PowerInfo info;
+
+    static uint8_t EstimateBatteryPercent(uint16_t voltageMv);
 };

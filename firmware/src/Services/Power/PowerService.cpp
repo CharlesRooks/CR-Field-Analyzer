@@ -15,8 +15,6 @@ void PowerService::Begin(LilyGo_AMOLED *device)
         return;
     }
 
-    // Required before reading voltage values from the
-    // BQ25896 power-management chip on the 1.91-inch AMOLED Plus.
     board->BQ.enableMeasure();
 
     Update();
@@ -25,13 +23,14 @@ void PowerService::Begin(LilyGo_AMOLED *device)
 void PowerService::Update()
 {
     static uint32_t lastUpdateMs = 0;
+    const uint32_t now = millis();
 
-    if (millis() - lastUpdateMs < 1000)
+    if (now - lastUpdateMs < 1000)
     {
         return;
     }
 
-    lastUpdateMs = millis();
+    lastUpdateMs = now;
 
     if (board == nullptr)
     {
@@ -39,18 +38,36 @@ void PowerService::Update()
         return;
     }
 
-    info.usbConnected = board->BQ.isVbusIn();
-    info.charging = board->BQ.isCharging();
-
     info.batteryVoltageMv = board->BQ.getBattVoltage();
     info.usbVoltageMv = board->BQ.getVbusVoltage();
     info.systemVoltageMv = board->BQ.getSystemVoltage();
 
-    // The BQ charger cannot directly confirm that a battery exists.
-    // Infer presence from a plausible single-cell battery voltage.
+    info.usbConnected = info.usbVoltageMv >= 4000;
+
+    info.charging =
+        info.usbConnected &&
+        board->BQ.isCharging();
+
     info.batteryConnected =
         info.batteryVoltageMv >= 2500 &&
         info.batteryVoltageMv <= 4600;
+
+    if (info.batteryConnected)
+    {
+        info.batteryPercent =
+            EstimateBatteryPercent(info.batteryVoltageMv);
+    }
+    else
+    {
+        info.batteryPercent = 0;
+    }
+
+    Serial.printf(
+        "Power refreshed: VBAT=%u VBUS=%u USB=%s\n",
+        info.batteryVoltageMv,
+        info.usbVoltageMv,
+        info.usbConnected ? "Yes" : "No"
+    );
 }
 
 const PowerInfo &PowerService::GetInfo()
@@ -91,4 +108,25 @@ uint16_t PowerService::GetSystemVoltageMv()
 uint8_t PowerService::GetBatteryPercent()
 {
     return info.batteryPercent;
+}
+
+uint8_t PowerService::EstimateBatteryPercent(uint16_t voltageMv)
+{
+    constexpr uint16_t BATTERY_EMPTY_MV = 3300;
+    constexpr uint16_t BATTERY_FULL_MV = 4200;
+
+    if (voltageMv <= BATTERY_EMPTY_MV)
+    {
+        return 0;
+    }
+
+    if (voltageMv >= BATTERY_FULL_MV)
+    {
+        return 100;
+    }
+
+    return static_cast<uint8_t>(
+        ((voltageMv - BATTERY_EMPTY_MV) * 100UL) /
+        (BATTERY_FULL_MV - BATTERY_EMPTY_MV)
+    );
 }

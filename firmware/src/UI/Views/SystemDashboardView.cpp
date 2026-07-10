@@ -80,8 +80,17 @@ void SystemDashboardView::Update()
             snprintf(
                 buffer,
                 sizeof(buffer),
-                "CHG %u",
-                PowerService::GetBatteryVoltageMv()
+                "CHG %u%%",
+                PowerService::GetBatteryPercent()
+            );
+        }
+        else if (PowerService::IsUSBConnected())
+        {
+            snprintf(
+                buffer,
+                sizeof(buffer),
+                "USB %u%%",
+                PowerService::GetBatteryPercent()
             );
         }
         else
@@ -89,26 +98,18 @@ void SystemDashboardView::Update()
             snprintf(
                 buffer,
                 sizeof(buffer),
-                "%u mV",
-                PowerService::GetBatteryVoltageMv()
+                "BAT %u%%",
+                PowerService::GetBatteryPercent()
             );
         }
     }
     else if (PowerService::IsUSBConnected())
     {
-        snprintf(
-            buffer,
-            sizeof(buffer),
-            "USB"
-        );
+        snprintf(buffer, sizeof(buffer), "USB");
     }
     else
     {
-        snprintf(
-            buffer,
-            sizeof(buffer),
-            "Unknown"
-        );
+        snprintf(buffer, sizeof(buffer), "Unknown");
     }
 
     powerTile.SetValue(buffer);

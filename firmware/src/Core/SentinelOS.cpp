@@ -66,6 +66,8 @@ void SentinelOS::Update()
                 frame.SetCurrent(navigation.Current());
             }
 
+            PowerService::Update();
+
             navigation.Update();
             break;
         }
