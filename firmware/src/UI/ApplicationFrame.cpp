@@ -10,8 +10,27 @@ void ApplicationFrame::Show(ScreenID currentScreen)
     CreateSeparators();
 
     contentArea = lv_obj_create(lv_scr_act());
-    lv_obj_set_size(contentArea, 220, 390);
-    lv_obj_align(contentArea, LV_ALIGN_TOP_LEFT, 10, 70);
+
+    const int screenWidth = lv_obj_get_width(lv_scr_act());
+    const int screenHeight = lv_obj_get_height(lv_scr_act());
+
+    const int contentX = 10;
+    const int contentY = 68;
+    const int footerHeight = 34;
+    const int bottomMargin = 4;
+
+    lv_obj_set_size(
+        contentArea,
+        screenWidth - 20,
+        screenHeight - contentY - footerHeight - bottomMargin
+    );
+
+    lv_obj_align(
+        contentArea,
+        LV_ALIGN_TOP_LEFT,
+        contentX,
+        contentY
+    );
 
     lv_obj_set_style_bg_opa(contentArea, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(contentArea, 0, 0);

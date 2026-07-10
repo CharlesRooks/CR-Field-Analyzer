@@ -7,7 +7,8 @@ void StatusTile::Create(lv_obj_t *parent, const char *label, const char *value, 
     lv_obj_set_size(container, 100, 48);
     // Position will be handled by GridLayout
 
-    lv_obj_set_style_bg_opa(container, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_opa(container, LV_OPA_20, 0);
+    lv_obj_set_style_bg_color(container, Theme::Muted(), 0);
     lv_obj_set_style_border_width(container, 1, 0);
     lv_obj_set_style_border_color(container, Theme::Muted(), 0);
     lv_obj_set_style_radius(container, 6, 0);
