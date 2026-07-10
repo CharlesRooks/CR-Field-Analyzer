@@ -16,6 +16,12 @@ private:
     lv_obj_t *parent = nullptr;
 
     StatusTile coreTile;
+    StatusTile displayTile;
+    StatusTile touchTile;
+    StatusTile flashTile;
+    StatusTile psramTile;
+    StatusTile heapTile;
+    StatusTile uptimeTile;
 
     uint32_t lastUpdateMs = 0;
 };
