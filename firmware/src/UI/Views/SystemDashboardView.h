@@ -22,6 +22,7 @@ private:
     StatusTile psramTile;
     StatusTile heapTile;
     StatusTile uptimeTile;
+    StatusTile powerTile;
 
     uint32_t lastUpdateMs = 0;
 };

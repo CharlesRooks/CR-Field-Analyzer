@@ -6,6 +6,7 @@
 #include <lvgl.h>
 
 #include "../Screens/SplashScreen.h"
+#include "../Services/Power/PowerService.h"
 
 static LilyGo_Class amoled;
 
@@ -31,6 +32,8 @@ void SentinelOS::Begin()
     beginLvglHelper(amoled);
 
     input.Begin(&amoled);
+    PowerService::Begin(&amoled);
+    PowerService::Update();
 
     ChangeState(AppState::Splash);
 }

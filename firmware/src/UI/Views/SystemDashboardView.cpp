@@ -1,7 +1,6 @@
 #include "SystemDashboardView.h"
-
 #include "../../Services/System/SystemService.h"
-
+#include "../../Services/Power/PowerService.h"
 #include <Arduino.h>
 
 void SystemDashboardView::Create(lv_obj_t *parentObject)
@@ -17,6 +16,7 @@ void SystemDashboardView::Create(lv_obj_t *parentObject)
     psramTile.Create(parent,   "PSRAM",   "--", 0, 0);
     heapTile.Create(parent,    "Heap",    "--", 0, 0);
     uptimeTile.Create(parent,  "Uptime",  "--", 0, 0);
+    powerTile.Create(parent, "Power", "--", 0, 0);
 
     layout.Position(coreTile.GetObject(),    0, 0);
     layout.Position(displayTile.GetObject(), 1, 0);
@@ -26,6 +26,7 @@ void SystemDashboardView::Create(lv_obj_t *parentObject)
     layout.Position(psramTile.GetObject(),   0, 1);
     layout.Position(heapTile.GetObject(),    1, 1);
     layout.Position(uptimeTile.GetObject(),  2, 1);
+    layout.Position(powerTile.GetObject(), 3, 1);
 }
 
 void SystemDashboardView::Update()
@@ -48,19 +49,67 @@ void SystemDashboardView::Update()
     displayTile.SetValue("OK");
     touchTile.SetValue("OK");
 
-    snprintf(buffer, sizeof(buffer), "%d MB",
-             SystemService::GetFlashSizeMB());
+    snprintf(
+        buffer,
+        sizeof(buffer),
+        "%d MB",
+        SystemService::GetFlashSizeMB()
+    );
     flashTile.SetValue(buffer);
 
     psramTile.SetValue(
         SystemService::HasPSRAM() ? "Ready" : "None"
     );
 
-    snprintf(buffer, sizeof(buffer), "%u KB",
-             SystemService::GetFreeHeapKB());
+    snprintf(
+        buffer,
+        sizeof(buffer),
+        "%u KB",
+        SystemService::GetFreeHeapKB()
+    );
     heapTile.SetValue(buffer);
 
     uptimeTile.SetValue(
         SystemService::GetFormattedUptime().c_str()
     );
+
+    if (PowerService::IsBatteryConnected())
+    {
+        if (PowerService::IsCharging())
+        {
+            snprintf(
+                buffer,
+                sizeof(buffer),
+                "CHG %u",
+                PowerService::GetBatteryVoltageMv()
+            );
+        }
+        else
+        {
+            snprintf(
+                buffer,
+                sizeof(buffer),
+                "%u mV",
+                PowerService::GetBatteryVoltageMv()
+            );
+        }
+    }
+    else if (PowerService::IsUSBConnected())
+    {
+        snprintf(
+            buffer,
+            sizeof(buffer),
+            "USB"
+        );
+    }
+    else
+    {
+        snprintf(
+            buffer,
+            sizeof(buffer),
+            "Unknown"
+        );
+    }
+
+    powerTile.SetValue(buffer);
 }
