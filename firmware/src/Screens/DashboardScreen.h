@@ -1,9 +1,7 @@
 #pragma once
 
 #include "../Core/Page.h"
-#include "../UI/Widgets/StatusTile.h"
-#include <lvgl.h>
-#include <stdint.h>
+#include "../UI/Views/SystemDashboardView.h"
 
 class DashboardScreen : public Page
 {
@@ -14,8 +12,5 @@ protected:
     void CreateContent() override;
 
 private:
-    StatusTile coreTile;
-    lv_obj_t *statusLabel = nullptr;
-    uint32_t lastUpdateMs = 0;
-    uint32_t updateCounter = 0;
+    SystemDashboardView systemDashboard;
 };
