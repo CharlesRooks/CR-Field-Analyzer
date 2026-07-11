@@ -61,13 +61,6 @@ void PowerService::Update()
     {
         info.batteryPercent = 0;
     }
-
-    Serial.printf(
-        "Power refreshed: VBAT=%u VBUS=%u USB=%s\n",
-        info.batteryVoltageMv,
-        info.usbVoltageMv,
-        info.usbConnected ? "Yes" : "No"
-    );
 }
 
 const PowerInfo &PowerService::GetInfo()
@@ -108,6 +101,61 @@ uint16_t PowerService::GetSystemVoltageMv()
 uint8_t PowerService::GetBatteryPercent()
 {
     return info.batteryPercent;
+}
+
+void PowerService::FormatStatus(char *buffer, size_t bufferSize)
+{
+    if (buffer == nullptr || bufferSize == 0)
+    {
+        return;
+    }
+
+    if (IsBatteryConnected())
+    {
+        if (IsCharging())
+        {
+            snprintf(
+                buffer,
+                bufferSize,
+                "CHG %u%%",
+                GetBatteryPercent()
+            );
+        }
+        else if (IsUSBConnected())
+        {
+            snprintf(
+                buffer,
+                bufferSize,
+                "USB %u%%",
+                GetBatteryPercent()
+            );
+        }
+        else
+        {
+            snprintf(
+                buffer,
+                bufferSize,
+                "BAT %u%%",
+                GetBatteryPercent()
+            );
+        }
+    }
+    else if (IsUSBConnected())
+    {
+        snprintf(
+            buffer,
+            bufferSize,
+            "USB"
+        );
+    }
+    else
+    {
+        snprintf(
+            buffer,
+            bufferSize,
+            "--"
+        );
+    }
 }
 
 uint8_t PowerService::EstimateBatteryPercent(uint16_t voltageMv)

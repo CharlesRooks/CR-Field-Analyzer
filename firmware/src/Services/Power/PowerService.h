@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PowerInfo.h"
+#include <stddef.h>
 
 class LilyGo_AMOLED;
 
@@ -26,6 +27,9 @@ public:
     static uint16_t GetSystemVoltageMv();
 
     static uint8_t GetBatteryPercent();
+
+    static void FormatStatus(char *buffer, size_t bufferSize);
+    
 
 private:
     static LilyGo_AMOLED *board;

@@ -70,3 +70,8 @@ void ApplicationFrame::CreateSeparators()
     lv_obj_set_style_border_width(bottomLine, 0, 0);
     lv_obj_clear_flag(bottomLine, LV_OBJ_FLAG_SCROLLABLE);
 }
+
+void ApplicationFrame::Update()
+{
+    headerBar.Update();
+}

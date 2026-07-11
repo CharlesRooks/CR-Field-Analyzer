@@ -10,6 +10,7 @@ class ApplicationFrame
 public:
     void Show(ScreenID currentScreen);
     void SetCurrent(ScreenID currentScreen);
+    void Update();
 
     lv_obj_t *GetContentArea();
 

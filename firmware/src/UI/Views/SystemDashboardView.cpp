@@ -73,44 +73,10 @@ void SystemDashboardView::Update()
         SystemService::GetFormattedUptime().c_str()
     );
 
-    if (PowerService::IsBatteryConnected())
-    {
-        if (PowerService::IsCharging())
-        {
-            snprintf(
-                buffer,
-                sizeof(buffer),
-                "CHG %u%%",
-                PowerService::GetBatteryPercent()
-            );
-        }
-        else if (PowerService::IsUSBConnected())
-        {
-            snprintf(
-                buffer,
-                sizeof(buffer),
-                "USB %u%%",
-                PowerService::GetBatteryPercent()
-            );
-        }
-        else
-        {
-            snprintf(
-                buffer,
-                sizeof(buffer),
-                "BAT %u%%",
-                PowerService::GetBatteryPercent()
-            );
-        }
-    }
-    else if (PowerService::IsUSBConnected())
-    {
-        snprintf(buffer, sizeof(buffer), "USB");
-    }
-    else
-    {
-        snprintf(buffer, sizeof(buffer), "Unknown");
-    }
+    PowerService::FormatStatus(
+        buffer,
+        sizeof(buffer)
+    );
 
     powerTile.SetValue(buffer);
 }
