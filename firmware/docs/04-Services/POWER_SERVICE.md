@@ -124,15 +124,18 @@ public:
 
 ## Battery Percentage Estimation
 
-The initial battery percentage will be estimated from voltage.
+Battery percentage is currently estimated from the measured battery voltage.
 
-This is an approximation and should not be treated as laboratory-grade battery capacity measurement.
+The implementation:
 
-The first implementation will:
+1. Reads the battery voltage from the BQ25896.
+2. Validates that the voltage is within a plausible single-cell battery range.
+3. Clamps the voltage between the configured empty and full thresholds.
+4. Converts the voltage into a percentage from 0–100%.
 
-1. Read battery voltage.
-2. Clamp the value between configured minimum and maximum voltages.
-3. Convert the voltage into a percentage from 0–100%.
+The current implementation uses a linear voltage-based estimate.
+
+This provides a practical battery indicator but should not be treated as laboratory-grade battery capacity measurement.
 
 Future versions may use:
 
@@ -140,6 +143,7 @@ Future versions may use:
 - Load compensation
 - Charging-state compensation
 - Battery characterization data
+- Battery-health estimation
 - A dedicated fuel-gauge IC
 
 ---
@@ -250,38 +254,31 @@ Future PowerService capabilities may include:
 
 ---
 
-## Initial Milestones
+## Implementation Status
 
-### Milestone 7.1 — PowerService Design
+### Completed
 
-- Define responsibilities
-- Define `PowerInfo`
-- Define public API
-- Document update model
+- PowerService architecture and public API
+- PowerInfo cached data model
+- BQ25896 measurement initialization
+- Battery voltage monitoring
+- USB/VBUS voltage monitoring
+- System voltage monitoring
+- Battery connection inference
+- USB and battery power-source identification
+- Battery percentage estimation
+- One-second cached PMU polling
+- Centralized power-status formatting
+- System Dashboard power tile
+- Persistent HeaderBar power indicator
+- Live switching between USB and battery operation
 
-### Milestone 7.2 — PowerService Framework
+### Remaining
 
-- Create `PowerInfo.h`
-- Implement service initialization
-- Implement cached state
-- Add safe default values
-
-### Milestone 7.3 — PMU Integration
-
-- Read battery voltage
-- Detect battery connection
-- Detect charging
-- Detect USB/VBUS power
-- Read system voltage
-
-### Milestone 7.4 — Battery Percentage
-
-- Add voltage-based percentage estimation
-- Validate readings on hardware
-- Tune voltage thresholds
-
-### Milestone 7.5 — UI Integration
-
-- Add battery status to HeaderBar
-- Add power information to the dashboard
-- Add charging and USB indicators
+- Battery percentage curve calibration
+- Charging-state validation
+- Low-battery warnings
+- Power statistics
+- Sleep-mode preparation
+- Dedicated Power Management view
+- Battery-health and runtime estimation

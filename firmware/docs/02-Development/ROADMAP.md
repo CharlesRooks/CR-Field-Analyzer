@@ -1,6 +1,6 @@
 # SentinelOS Roadmap
 
-**Current Version:** v0.4.0 (Adaptive UI Framework)
+**Current Version:** v0.5.0 (Power Management)
 
 ---
 
@@ -53,16 +53,24 @@
 
 ---
 
-## ⬜ v0.5.0 – Power Management
+### 🟨 v0.5.0 – Power Management
 
-- Battery monitoring
-- Battery percentage
-- Charging detection
-- USB power detection
-- Power source identification
-- Power statistics
-- Low battery warnings
-- Sleep mode preparation
+- ✔ PowerService architecture
+- ✔ PowerInfo data model
+- ✔ BQ25896 PMU integration
+- ✔ Battery voltage monitoring
+- ✔ Battery percentage estimation
+- ✔ USB power detection
+- ✔ Power source identification
+- ✔ Live System Dashboard power status
+- ✔ Persistent HeaderBar power indicator
+- ⬜ Battery percentage curve calibration
+- ⬜ Charging-state validation
+- ⬜ Power statistics
+- ⬜ Low battery warnings
+- ⬜ Sleep mode preparation
+
+**Status:** In Progress
 
 ---
 
