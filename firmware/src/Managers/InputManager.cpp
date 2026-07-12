@@ -27,14 +27,11 @@ InputEvent InputManager::Update()
             startX = x[0];
             startY = y[0];
             startMs = now;
-            Serial.printf("Gesture start: X=%d Y=%d\n", startX, startY);
         }
 
         lastX = x[0];
         lastY = y[0];
         lastUpdateMs = now;
-
-        Serial.printf("Touch: X=%d Y=%d\n", lastX, lastY);
 
         return InputEvent::None;
     }
@@ -46,9 +43,6 @@ InputEvent InputManager::Update()
         uint32_t duration = now - startMs;
         int16_t deltaX = lastX - startX;
         int16_t deltaY = lastY - startY;
-
-        Serial.printf("Gesture end: DX=%d DY=%d Duration=%lu ms\n",
-                      deltaX, deltaY, duration);
 
         if (duration > MAX_GESTURE_MS)
         {
@@ -62,17 +56,14 @@ InputEvent InputManager::Update()
 
         if (deltaX <= -SWIPE_THRESHOLD_X)
         {
-            Serial.println("Swipe LEFT");
             return InputEvent::SwipeLeft;
         }
 
         if (deltaX >= SWIPE_THRESHOLD_X)
         {
-            Serial.println("Swipe RIGHT");
             return InputEvent::SwipeRight;
         }
 
-        Serial.println("Tap");
         return InputEvent::Tap;
     }
 

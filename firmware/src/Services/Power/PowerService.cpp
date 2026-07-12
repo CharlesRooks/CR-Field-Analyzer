@@ -24,6 +24,8 @@ void PowerService::Update()
 {
     static uint32_t lastUpdateMs = 0;
     const uint32_t now = millis();
+    uint8_t batteryPercent = 0;
+    uint8_t lastDischargePercent = 0;
 
     if (now - lastUpdateMs < 1000)
     {
@@ -44,22 +46,105 @@ void PowerService::Update()
 
     info.usbConnected = info.usbVoltageMv >= 4000;
 
-    info.charging =
-        info.usbConnected &&
-        board->BQ.isCharging();
-
     info.batteryConnected =
         info.batteryVoltageMv >= 2500 &&
         info.batteryVoltageMv <= 4600;
 
-    if (info.batteryConnected)
+    // Enable charging only when both USB and a valid battery are present.
+    if (info.usbConnected && info.batteryConnected)
     {
-        info.batteryPercent =
+        if (!board->BQ.isEnableCharge())
+        {
+            board->BQ.setChargeTargetVoltage(4208);
+            board->BQ.setPrechargeCurr(64);
+            board->BQ.setChargerConstantCurr(832);
+            board->BQ.enableCharge();
+        }
+    }
+    else if (!info.batteryConnected && board->BQ.isEnableCharge())
+    {
+        // Avoid enabling the charger when no battery is detected.
+        board->BQ.disableCharge();
+    }
+
+    const auto chargeState = board->BQ.chargeStatus();
+
+    if (!info.batteryConnected)
+    {
+        info.batteryPercent = 0;
+        info.lastDischargePercent = 0;
+    }
+    else if (!info.usbConnected)
+    {
+        const uint8_t estimatedPercent =
             EstimateBatteryPercent(info.batteryVoltageMv);
+
+        if (info.lastDischargePercent == 0)
+        {
+            info.lastDischargePercent = estimatedPercent;
+        }
+        else if (estimatedPercent > info.lastDischargePercent + 1)
+        {
+            info.lastDischargePercent++;
+        }
+        else if (estimatedPercent + 1 < info.lastDischargePercent)
+        {
+            info.lastDischargePercent--;
+        }
+
+        info.batteryPercent = info.lastDischargePercent;
+    }
+    else if (chargeState == PowersBQ25896::CHARGE_STATE_DONE)
+    {
+        info.batteryPercent = 100;
+        info.lastDischargePercent = 100;
     }
     else
     {
+        // Charging voltage is artificially elevated, so preserve the last
+        // battery-only estimate instead of recalculating toward 100%.
+        if (info.lastDischargePercent == 0)
+        {
+            uint8_t startupEstimate =
+                EstimateBatteryPercent(info.batteryVoltageMv);
+
+            info.lastDischargePercent =
+                startupEstimate > 95 ? 95 : startupEstimate;
+        }
+
+        info.batteryPercent = info.lastDischargePercent;
+    }
+
+    info.charging =
+        info.usbConnected &&
+        (
+            chargeState == PowersBQ25896::CHARGE_STATE_PRE_CHARGE ||
+            chargeState == PowersBQ25896::CHARGE_STATE_FAST_CHARGE
+        );
+
+    if (!info.batteryConnected)
+    {
         info.batteryPercent = 0;
+        info.lastDischargePercent = 0;
+    }
+    else if (!info.usbConnected)
+    {
+        // Battery voltage is most useful for estimation when not charging.
+        info.batteryPercent =
+            EstimateBatteryPercent(info.batteryVoltageMv);
+
+        info.lastDischargePercent = info.batteryPercent;
+    }
+    else if (chargeState == PowersBQ25896::CHARGE_STATE_DONE)
+    {
+        info.batteryPercent = 100;
+        info.lastDischargePercent = 100;
+    }
+    else
+    {
+        // Charging voltage is elevated and would produce a falsely high
+        // percentage. Keep the last battery-only estimate instead.
+        info.batteryPercent = info.lastDischargePercent;
     }
 }
 

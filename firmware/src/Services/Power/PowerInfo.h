@@ -13,4 +13,5 @@ struct PowerInfo
     uint16_t systemVoltageMv = 0;
 
     uint8_t batteryPercent = 0;
+    uint8_t lastDischargePercent = 0;
 };
