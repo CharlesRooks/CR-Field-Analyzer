@@ -272,11 +272,15 @@ Future PowerService capabilities may include:
 - System Dashboard power tile
 - Persistent HeaderBar power indicator
 - Live switching between USB and battery operation
+- BQ25896 charging-state validation
+- Conditional charger enablement when USB and battery are present
+- Charging-state reporting
+- Charging-voltage percentage compensation
+- Battery percentage smoothing during voltage settling
 
 ### Remaining
 
 - Battery percentage curve calibration
-- Charging-state validation
 - Low-battery warnings
 - Power statistics
 - Sleep-mode preparation

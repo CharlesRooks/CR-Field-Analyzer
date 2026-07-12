@@ -15,11 +15,16 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 - Power status tile on System Dashboard.
 - Persistent power indicator in HeaderBar.
 - Centralized power-status formatting.
+- BQ25896 charging-state validation.
+- Conditional charger enablement when USB and battery are present.
+- Battery percentage smoothing.
 
 ### Changed
 - Renamed the Battery dashboard tile to Power.
 - ApplicationFrame now supports recurring frame updates.
 - HeaderBar now consumes live PowerService status.
+- Battery percentage now compensates for elevated charging voltage.
+- Charging status now uses validated BQ25896 charge states.
 
 ### Technical
 - Power-management data is cached by PowerService.

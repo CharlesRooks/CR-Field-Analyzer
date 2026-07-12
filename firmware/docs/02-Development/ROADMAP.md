@@ -64,8 +64,11 @@
 - ✔ Power source identification
 - ✔ Live System Dashboard power status
 - ✔ Persistent HeaderBar power indicator
+- ✔ Charging-state validation
+- ✔ Conditional charger enablement
+- ✔ Charging-voltage percentage compensation
+- ✔ Battery percentage smoothing
 - ⬜ Battery percentage curve calibration
-- ⬜ Charging-state validation
 - ⬜ Power statistics
 - ⬜ Low battery warnings
 - ⬜ Sleep mode preparation
