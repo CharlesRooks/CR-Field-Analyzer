@@ -245,21 +245,74 @@ void PowerService::FormatStatus(char *buffer, size_t bufferSize)
 
 uint8_t PowerService::EstimateBatteryPercent(uint16_t voltageMv)
 {
-    constexpr uint16_t BATTERY_EMPTY_MV = 3300;
-    constexpr uint16_t BATTERY_FULL_MV = 4200;
-
-    if (voltageMv <= BATTERY_EMPTY_MV)
+    struct VoltagePoint
     {
-        return 0;
+        uint16_t voltageMv;
+        uint8_t percent;
+    };
+
+    static constexpr VoltagePoint curve[] =
+    {
+        {4200, 100},
+        {4150, 95},
+        {4110, 90},
+        {4080, 85},
+        {4020, 80},
+        {3980, 75},
+        {3950, 70},
+        {3910, 65},
+        {3870, 60},
+        {3850, 55},
+        {3820, 50},
+        {3800, 45},
+        {3780, 40},
+        {3760, 35},
+        {3740, 30},
+        {3710, 25},
+        {3680, 20},
+        {3650, 15},
+        {3600, 10},
+        {3500, 5},
+        {3300, 0}
+    };
+
+    constexpr size_t pointCount =
+        sizeof(curve) / sizeof(curve[0]);
+
+    if (voltageMv >= curve[0].voltageMv)
+    {
+        return curve[0].percent;
     }
 
-    if (voltageMv >= BATTERY_FULL_MV)
+    if (voltageMv <= curve[pointCount - 1].voltageMv)
     {
-        return 100;
+        return curve[pointCount - 1].percent;
     }
 
-    return static_cast<uint8_t>(
-        ((voltageMv - BATTERY_EMPTY_MV) * 100UL) /
-        (BATTERY_FULL_MV - BATTERY_EMPTY_MV)
-    );
+    for (size_t i = 0; i < pointCount - 1; i++)
+    {
+        const VoltagePoint &upper = curve[i];
+        const VoltagePoint &lower = curve[i + 1];
+
+        if (voltageMv <= upper.voltageMv &&
+            voltageMv >= lower.voltageMv)
+        {
+            const uint16_t voltageRange =
+                upper.voltageMv - lower.voltageMv;
+
+            const uint16_t voltageOffset =
+                voltageMv - lower.voltageMv;
+
+            const uint8_t percentRange =
+                upper.percent - lower.percent;
+
+            return lower.percent +
+                   static_cast<uint8_t>(
+                       (voltageOffset * percentRange) /
+                       voltageRange
+                   );
+        }
+    }
+
+    return 0;
 }
