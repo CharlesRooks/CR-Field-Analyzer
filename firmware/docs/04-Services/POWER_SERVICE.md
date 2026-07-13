@@ -277,10 +277,12 @@ Future PowerService capabilities may include:
 - Charging-state reporting
 - Charging-voltage percentage compensation
 - Battery percentage smoothing during voltage settling
+- Piecewise LiPo voltage-to-percentage curve
+- Interpolated battery percentage estimation
+- Calibrated nonlinear battery discharge estimation
 
 ### Remaining
 
-- Battery percentage curve calibration
 - Low-battery warnings
 - Power statistics
 - Sleep-mode preparation

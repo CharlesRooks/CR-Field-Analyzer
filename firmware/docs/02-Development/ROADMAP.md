@@ -68,7 +68,7 @@
 - ✔ Conditional charger enablement
 - ✔ Charging-voltage percentage compensation
 - ✔ Battery percentage smoothing
-- ⬜ Battery percentage curve calibration
+- ✔ Battery percentage curve calibration
 - ⬜ Power statistics
 - ⬜ Low battery warnings
 - ⬜ Sleep mode preparation

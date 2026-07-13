@@ -18,6 +18,8 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 - BQ25896 charging-state validation.
 - Conditional charger enablement when USB and battery are present.
 - Battery percentage smoothing.
+- Piecewise LiPo voltage-to-percentage curve.
+- Interpolated battery percentage estimation.
 
 ### Changed
 - Renamed the Battery dashboard tile to Power.
@@ -25,6 +27,7 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 - HeaderBar now consumes live PowerService status.
 - Battery percentage now compensates for elevated charging voltage.
 - Charging status now uses validated BQ25896 charge states.
+- Replaced linear battery percentage estimation with a nonlinear LiPo discharge curve.
 
 ### Technical
 - Power-management data is cached by PowerService.
