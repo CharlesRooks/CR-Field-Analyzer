@@ -4,9 +4,11 @@
 #include <LilyGo_AMOLED.h>
 #include <LV_Helper.h>
 #include <lvgl.h>
+#include <esp_system.h>
 
 #include "../Screens/SplashScreen.h"
 #include "../Services/Power/PowerService.h"
+#include "../Services/Power/SleepService.h"
 
 static LilyGo_Class amoled;
 
@@ -18,6 +20,13 @@ void SentinelOS::Begin()
 
     Serial.println();
     Serial.println("Starting SentinelOS...");
+
+    pinMode(0, INPUT_PULLUP);
+
+    Serial.printf(
+        "Reset reason: %d\n",
+        static_cast<int>(esp_reset_reason())
+    );
 
     if (!amoled.begin())
     {
@@ -34,6 +43,13 @@ void SentinelOS::Begin()
     input.Begin(&amoled);
     PowerService::Begin(&amoled);
     PowerService::Update();
+
+    SleepService::Begin();
+
+    Serial.printf(
+        "Wake reason: %s\n",
+        SleepService::GetWakeReasonText()
+    );
 
     ChangeState(AppState::Splash);
 }
@@ -66,10 +82,34 @@ void SentinelOS::Update()
                 frame.SetCurrent(navigation.Current());
             }
 
+            static uint32_t bootPressedMs = 0;
+            static bool sleepTriggered = false;
+
+            const bool bootPressed = digitalRead(0) == LOW;
+
+            if (bootPressed)
+            {
+                if (bootPressedMs == 0)
+                {
+                    bootPressedMs = millis();
+                }
+                else if (!sleepTriggered &&
+                        millis() - bootPressedMs >= 2000)
+                {
+                    sleepTriggered = true;
+                    SleepService::EnterDeepSleep();
+                }
+            }
+            else
+            {
+                bootPressedMs = 0;
+                sleepTriggered = false;
+            }
+
             PowerService::Update();
             frame.Update();
             navigation.Update();
-            
+
             break;
         }
 

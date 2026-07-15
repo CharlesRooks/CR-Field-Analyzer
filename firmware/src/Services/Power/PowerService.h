@@ -29,6 +29,10 @@ public:
     static uint8_t GetBatteryPercent();
 
     static void FormatStatus(char *buffer, size_t bufferSize);
+
+    static bool IsLowBattery();
+    
+    static bool IsCriticalBattery();
     
 
 private:

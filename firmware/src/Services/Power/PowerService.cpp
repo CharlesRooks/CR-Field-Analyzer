@@ -24,8 +24,6 @@ void PowerService::Update()
 {
     static uint32_t lastUpdateMs = 0;
     const uint32_t now = millis();
-    uint8_t batteryPercent = 0;
-    uint8_t lastDischargePercent = 0;
 
     if (now - lastUpdateMs < 1000)
     {
@@ -44,13 +42,15 @@ void PowerService::Update()
     info.usbVoltageMv = board->BQ.getVbusVoltage();
     info.systemVoltageMv = board->BQ.getSystemVoltage();
 
+    info.wasUsbConnected = info.usbConnected;
+
     info.usbConnected = info.usbVoltageMv >= 4000;
 
     info.batteryConnected =
         info.batteryVoltageMv >= 2500 &&
         info.batteryVoltageMv <= 4600;
 
-    // Enable charging only when both USB and a valid battery are present.
+    // Enable charging only when USB and a valid battery are present.
     if (info.usbConnected && info.batteryConnected)
     {
         if (!board->BQ.isEnableCharge())
@@ -63,11 +63,21 @@ void PowerService::Update()
     }
     else if (!info.batteryConnected && board->BQ.isEnableCharge())
     {
-        // Avoid enabling the charger when no battery is detected.
         board->BQ.disableCharge();
     }
 
-    const auto chargeState = board->BQ.chargeStatus();
+   const auto chargeState = board->BQ.chargeStatus();
+
+    info.charging =
+        info.usbConnected &&
+        (
+            chargeState == PowersBQ25896::CHARGE_STATE_PRE_CHARGE ||
+            chargeState == PowersBQ25896::CHARGE_STATE_FAST_CHARGE
+        );
+
+    info.chargeComplete =
+        info.usbConnected &&
+        chargeState == PowersBQ25896::CHARGE_STATE_DONE;
 
     if (!info.batteryConnected)
     {
@@ -79,16 +89,22 @@ void PowerService::Update()
         const uint8_t estimatedPercent =
             EstimateBatteryPercent(info.batteryVoltageMv);
 
-        if (info.lastDischargePercent == 0)
+        if (info.wasUsbConnected)
+        {
+            // USB was just removed. Keep the last trusted battery-only percentage.
+            // The battery voltage is temporarily elevated immediately after charging.
+            if (info.lastDischargePercent == 0)
+            {
+                info.lastDischargePercent = estimatedPercent;
+            }
+        }
+        else if (info.lastDischargePercent == 0)
         {
             info.lastDischargePercent = estimatedPercent;
         }
-        else if (estimatedPercent > info.lastDischargePercent + 1)
+        else if (estimatedPercent < info.lastDischargePercent)
         {
-            info.lastDischargePercent++;
-        }
-        else if (estimatedPercent + 1 < info.lastDischargePercent)
-        {
+            // During normal battery operation, decrease gradually and never rebound.
             info.lastDischargePercent--;
         }
 
@@ -96,13 +112,13 @@ void PowerService::Update()
     }
     else if (chargeState == PowersBQ25896::CHARGE_STATE_DONE)
     {
+        // Display full charge while USB is connected, but preserve the last
+        // battery-only estimate for when external power is removed.
         info.batteryPercent = 100;
-        info.lastDischargePercent = 100;
     }
     else
     {
-        // Charging voltage is artificially elevated, so preserve the last
-        // battery-only estimate instead of recalculating toward 100%.
+        // Preserve the last battery-only estimate while charging.
         if (info.lastDischargePercent == 0)
         {
             uint8_t startupEstimate =
@@ -115,37 +131,15 @@ void PowerService::Update()
         info.batteryPercent = info.lastDischargePercent;
     }
 
-    info.charging =
-        info.usbConnected &&
-        (
-            chargeState == PowersBQ25896::CHARGE_STATE_PRE_CHARGE ||
-            chargeState == PowersBQ25896::CHARGE_STATE_FAST_CHARGE
-        );
+    info.lowBattery =
+        info.batteryConnected &&
+        !info.usbConnected &&
+        info.batteryPercent <= 20;
 
-    if (!info.batteryConnected)
-    {
-        info.batteryPercent = 0;
-        info.lastDischargePercent = 0;
-    }
-    else if (!info.usbConnected)
-    {
-        // Battery voltage is most useful for estimation when not charging.
-        info.batteryPercent =
-            EstimateBatteryPercent(info.batteryVoltageMv);
-
-        info.lastDischargePercent = info.batteryPercent;
-    }
-    else if (chargeState == PowersBQ25896::CHARGE_STATE_DONE)
-    {
-        info.batteryPercent = 100;
-        info.lastDischargePercent = 100;
-    }
-    else
-    {
-        // Charging voltage is elevated and would produce a falsely high
-        // percentage. Keep the last battery-only estimate instead.
-        info.batteryPercent = info.lastDischargePercent;
-    }
+    info.criticalBattery =
+        info.batteryConnected &&
+        !info.usbConnected &&
+        info.batteryPercent <= 10;
 }
 
 const PowerInfo &PowerService::GetInfo()
@@ -166,6 +160,16 @@ bool PowerService::IsCharging()
 bool PowerService::IsUSBConnected()
 {
     return info.usbConnected;
+}
+
+bool PowerService::IsLowBattery()
+{
+    return info.lowBattery;
+}
+
+bool PowerService::IsCriticalBattery()
+{
+    return info.criticalBattery;
 }
 
 uint16_t PowerService::GetBatteryVoltageMv()
@@ -197,7 +201,15 @@ void PowerService::FormatStatus(char *buffer, size_t bufferSize)
 
     if (IsBatteryConnected())
     {
-        if (IsCharging())
+        if (info.chargeComplete)
+        {
+            snprintf(
+                buffer,
+                bufferSize,
+                "FULL 100%%"
+            );
+        }
+        else if (IsCharging())
         {
             snprintf(
                 buffer,
@@ -212,6 +224,24 @@ void PowerService::FormatStatus(char *buffer, size_t bufferSize)
                 buffer,
                 bufferSize,
                 "USB %u%%",
+                GetBatteryPercent()
+            );
+        }
+        else if (IsCriticalBattery())
+        {
+            snprintf(
+                buffer,
+                bufferSize,
+                "CRIT %u%%",
+                GetBatteryPercent()
+            );
+        }
+        else if (IsLowBattery())
+        {
+            snprintf(
+                buffer,
+                bufferSize,
+                "LOW %u%%",
                 GetBatteryPercent()
             );
         }

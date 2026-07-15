@@ -6,7 +6,9 @@ struct PowerInfo
 {
     bool batteryConnected = false;
     bool charging = false;
+    bool chargeComplete = false;
     bool usbConnected = false;
+    bool wasUsbConnected = false;
 
     uint16_t batteryVoltageMv = 0;
     uint16_t usbVoltageMv = 0;
@@ -14,4 +16,7 @@ struct PowerInfo
 
     uint8_t batteryPercent = 0;
     uint8_t lastDischargePercent = 0;
+
+    bool lowBattery = false;
+    bool criticalBattery = false;
 };
