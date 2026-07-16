@@ -198,27 +198,23 @@ Characteristics:
 
 # Software Architecture
 
-```
-                SentinelOS
-                     │
-        ┌────────────┼─────────────┐
-        │            │             │
-      Core          UI         Screens
-        │                         │
-        │                         │
-        └────────────┬────────────┘
-                     │
-                 Services
-                     │
-                     │
-          Hardware Abstraction
-                     │
-                     │
-          LilyGO Hardware Library
-                     │
-                     │
-                ESP32-S3 Hardware
-```
+                    SentinelOS
+                         │
+          ┌──────────────┼──────────────┐
+          │              │              │
+        Core         Managers          UI
+          │              │              │
+          │              │         Views / Widgets
+          │              │
+          └──────────────┼──────────────┘
+                         │
+                      Services
+                         │
+               Hardware Abstraction
+                         │
+              LilyGO Hardware Library
+                         │
+                  ESP32-S3 Hardware
 
 ---
 
@@ -239,6 +235,7 @@ Responsibilities:
 Current Classes
 
 - SentinelOS
+- ApplicationFrame
 
 ---
 
@@ -259,11 +256,14 @@ Responsibilities:
 Current Classes
 
 - Theme
+- HeaderBar
+- NavigationBar
+- StatusTile
+- GridLayout
+- SystemDashboardView
 
 Future Classes
 
-- StatusBar
-- NavigationBar
 - DialogManager
 - IconLibrary
 
@@ -297,17 +297,46 @@ Screens request information from Services.
 
 Services communicate with Hardware.
 
-Examples:
+Current Services
 
-- BatteryService
+- SystemService
+- PowerService
+- SleepService
+
+Planned Services
+
 - WiFiService
 - BluetoothService
-- StorageService
 - SensorService
-- SystemService
+- StorageService
 - GPSService
 
 ---
+
+
+## Managers
+
+Managers coordinate behavior between services.
+
+Managers do not communicate directly with hardware.
+
+Examples:
+
+Current Managers
+
+- NavigationManager
+- InputManager
+
+Planned Managers
+
+- PowerManager
+
+Responsibilities:
+
+- Coordinate services.
+- Maintain application state.
+- Enforce system policies.
+- Orchestrate user interaction.
 
 ## Hardware
 
@@ -364,33 +393,26 @@ ARCHITECTURE.md
 
 3. Hardware never communicates directly with Screens.
 
-4. Services provide information.
+4. Services own hardware capabilities.
 
-5. Core coordinates the application.
+5. Managers coordinate services.
 
-6. UI owns visual appearance.
+6. Services do not coordinate one another.
 
-7. Every feature has one owner.
+7. UI consumes cached service data.
 
-8. Every new module should integrate without modifying existing modules whenever possible.
-
-9. Commit every stable milestone.
-
-10. Documentation evolves alongside the code.
+8. Hardware is accessed only through services.
 
 ---
 
 # Milestone Roadmap
 
-| Milestone | Codename | Status |
-|------------|----------|--------|
-| Milestone 1 | **Foundation** | ✅ Complete |
-| Milestone 2 | **Beacon** | ✅ Complete |
-| Milestone 3 | **Awareness** | ⏳ In Progress |
-| Milestone 4 | **Navigation** | Planned |
-| Milestone 5 | **Recon** | Planned |
-| Milestone 6 | **Insight** | Planned |
-| Milestone 7 | **Expansion** | Planned |
+Milestone 1  Hardware Bring-up
+Milestone 2  Core UI Framework
+Milestone 3  Navigation Framework
+Milestone 4  Adaptive UI Framework
+Milestone 5  Power Management Foundation
+Milestone 6  Power Management Framework
 
 ---
 

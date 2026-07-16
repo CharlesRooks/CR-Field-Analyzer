@@ -69,9 +69,13 @@
 - ✔ Charging-voltage percentage compensation
 - ✔ Battery percentage smoothing
 - ✔ Battery percentage curve calibration
-- ⬜ Power statistics
-- ⬜ Low battery warnings
-- ⬜ Sleep mode preparation
+- ✔ SleepService framework
+- ✔ Deep sleep validation
+- ✔ BOOT wake source
+- ⬜ Display dimming
+- ⬜ Display sleep
+- ⬜ Automatic sleep
+- ⬜ Power policies
 
 **Status:** In Progress
 

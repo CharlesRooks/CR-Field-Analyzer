@@ -20,20 +20,32 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 - Battery percentage smoothing.
 - Piecewise LiPo voltage-to-percentage curve.
 - Interpolated battery percentage estimation.
+- SleepService framework.
+- Manual deep-sleep support.
+- BOOT-button deep-sleep wake support.
 
 ### Changed
 - Renamed the Battery dashboard tile to Power.
 - ApplicationFrame now supports recurring frame updates.
 - HeaderBar now consumes live PowerService status.
 - Battery percentage now compensates for elevated charging voltage.
+- Battery percentage now preserves the last valid discharge estimate while charging.
 - Charging status now uses validated BQ25896 charge states.
 - Replaced linear battery percentage estimation with a nonlinear LiPo discharge curve.
+- Power status formatting centralized through PowerService.
+
+### Fixed
+
+- Battery percentage oscillation caused by LiPo voltage recovery.
+- Incorrect battery percentage transitions between USB and battery operation.
+- Immediate deep-sleep wake caused by entering sleep while the BOOT button was still pressed.
 
 ### Technical
 - Power-management data is cached by PowerService.
 - PMU polling is throttled to one-second intervals.
 - UI components consume cached power data.
 - Power status dynamically updates between USB and battery operation.
+- Introduced a dedicated SleepService to separate sleep management from power monitoring.
 
 
 ## [0.4.0-alpha] - 2026-07-11
