@@ -99,3 +99,4 @@ void SleepService::ConfigureWakeSources()
         0
     );
 }
+

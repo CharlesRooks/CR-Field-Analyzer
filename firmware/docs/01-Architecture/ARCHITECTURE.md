@@ -402,6 +402,16 @@ ARCHITECTURE.md
 7. UI consumes cached service data.
 
 8. Hardware is accessed only through services.
+   
+9.  Managers coordinate Services.
+    
+10. Services never coordinate Managers.
+    
+11. Services do not directly coordinate one another.
+    
+12. Managers own policy.
+    
+13. Services own capability.
 
 ---
 

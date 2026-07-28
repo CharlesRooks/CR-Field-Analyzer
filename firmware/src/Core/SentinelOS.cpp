@@ -9,6 +9,9 @@
 #include "../Screens/SplashScreen.h"
 #include "../Services/Power/PowerService.h"
 #include "../Services/Power/SleepService.h"
+#include "../Services/Display/DisplayService.h"
+#include "../Managers/PowerManager.h"
+
 
 static LilyGo_Class amoled;
 
@@ -44,7 +47,11 @@ void SentinelOS::Begin()
     PowerService::Begin(&amoled);
     PowerService::Update();
 
+    PowerManager::Begin();
+
     SleepService::Begin();
+
+    DisplayService::Begin(&amoled);
 
     Serial.printf(
         "Wake reason: %s\n",
@@ -73,19 +80,35 @@ void SentinelOS::Update()
 
             if (event == InputEvent::SwipeLeft)
             {
+                PowerManager::NotifyActivity();
+
                 navigation.Next();
                 frame.SetCurrent(navigation.Current());
             }
             else if (event == InputEvent::SwipeRight)
             {
+                PowerManager::NotifyActivity();
+
                 navigation.Previous();
                 frame.SetCurrent(navigation.Current());
+            }
+            else if (event == InputEvent::Tap)
+            {
+                PowerManager::NotifyActivity();
             }
 
             static uint32_t bootPressedMs = 0;
             static bool sleepTriggered = false;
+            static bool previousBootPressed = false;
 
             const bool bootPressed = digitalRead(0) == LOW;
+
+            if (bootPressed && !previousBootPressed)
+            {
+                PowerManager::NotifyActivity();
+            }
+
+            previousBootPressed = bootPressed;
 
             if (bootPressed)
             {
@@ -107,6 +130,7 @@ void SentinelOS::Update()
             }
 
             PowerService::Update();
+            PowerManager::Update();
             frame.Update();
             navigation.Update();
 
