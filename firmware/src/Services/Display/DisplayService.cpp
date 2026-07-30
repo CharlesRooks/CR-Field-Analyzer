@@ -33,11 +33,17 @@ uint8_t DisplayService::GetBrightness()
 
 void DisplayService::Dim()
 {
-    if (!displayOn)
+    if (board == nullptr || !displayOn)
         return;
 
-    savedBrightness = currentBrightness;
-    SetBrightness(60);
+    constexpr uint8_t dimBrightness = 60;
+
+    if (currentBrightness > dimBrightness)
+    {
+        savedBrightness = currentBrightness;
+    }
+
+    SetBrightness(dimBrightness);
 }
 
 void DisplayService::RestoreBrightness()
@@ -50,11 +56,33 @@ void DisplayService::RestoreBrightness()
 
 void DisplayService::TurnOn()
 {
+    if (board == nullptr || displayOn)
+        return;
+
+    uint8_t restoreLevel = savedBrightness;
+
+    if (restoreLevel == 0)
+    {
+        restoreLevel = 175;
+    }
+
+    board->setBrightness(restoreLevel);
+    currentBrightness = restoreLevel;
     displayOn = true;
 }
 
 void DisplayService::TurnOff()
 {
+    if (board == nullptr || !displayOn)
+        return;
+
+    if (currentBrightness > 0)
+    {
+        savedBrightness = currentBrightness;
+    }
+
+    board->setBrightness(0);
+    currentBrightness = 0;
     displayOn = false;
 }
 

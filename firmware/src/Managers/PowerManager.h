@@ -2,7 +2,14 @@
 
 #include "PowerPolicy.h"
 #include <stdint.h>
+#include "../Core/Messaging/MessageTypes.h"
 
+enum class DisplayPowerState : uint8_t
+{
+    Active,
+    Dimmed,
+    Off
+};
 class PowerManager
 {
 public:
@@ -18,7 +25,7 @@ private:
     static const PowerPolicy *activePolicy;
     static void SelectActivePolicy();
     static uint32_t lastActivityMs;
-    static bool displayDimmed;
+    static DisplayPowerState displayState;
     static void ApplyDisplayPolicy();
-    static void RestoreDisplayBrightness();
+    static void HandleMessage(const Message &message);
 };

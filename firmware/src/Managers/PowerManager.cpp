@@ -3,11 +3,14 @@
 
 #include "../Services/Power/PowerService.h"
 #include "../Services/Display/DisplayService.h"
+#include "../Core/Messaging/MessageBus.h"
 
 PowerPolicy PowerManager::usbPolicy;
 PowerPolicy PowerManager::batteryPolicy;
 uint32_t PowerManager::lastActivityMs = 0;
-bool PowerManager::displayDimmed = false;
+
+DisplayPowerState PowerManager::displayState =
+    DisplayPowerState::Active;
 
 const PowerPolicy *PowerManager::activePolicy =
     &PowerManager::batteryPolicy;
@@ -34,16 +37,35 @@ void PowerManager::Begin()
     batteryPolicy.displayOffTimeoutMs = 60000;
     batteryPolicy.deepSleepTimeoutMs = 120000;
 
+    displayState = DisplayPowerState::Active;
+    lastActivityMs = millis();
+
     SelectActivePolicy();
 
-    lastActivityMs = millis();
-    SelectActivePolicy();
+    MessageBus::Subscribe(
+    MessageType::UserActivity,
+    PowerManager::HandleMessage);
 }
 
 void PowerManager::NotifyActivity()
 {
     lastActivityMs = millis();
-    RestoreDisplayBrightness();
+
+    switch (displayState)
+    {
+        case DisplayPowerState::Active:
+            break;
+
+        case DisplayPowerState::Dimmed:
+            DisplayService::RestoreBrightness();
+            displayState = DisplayPowerState::Active;
+            break;
+
+        case DisplayPowerState::Off:
+            DisplayService::TurnOn();
+            displayState = DisplayPowerState::Active;
+            break;
+    }
 }
 
 uint32_t PowerManager::GetIdleTimeMs()
@@ -73,35 +95,67 @@ void PowerManager::SelectActivePolicy()
         activePolicy = &batteryPolicy;
     }
 }
+
 void PowerManager::ApplyDisplayPolicy()
 {
     if (activePolicy == nullptr)
-    {
         return;
-    }
 
-    if (!activePolicy->automaticPowerSavingEnabled ||
-        !activePolicy->allowDisplayDimming)
-    {
-        RestoreDisplayBrightness();
+    // Automatic power saving disabled.
+    if (!activePolicy->automaticPowerSavingEnabled)
         return;
-    }
 
-    if (!displayDimmed &&
-        GetIdleTimeMs() >= activePolicy->dimTimeoutMs)
+    const uint32_t idleTimeMs = millis() - lastActivityMs;
+
+    switch (displayState)
     {
-        DisplayService::SetBrightness(60);
-        displayDimmed = true;
+        case DisplayPowerState::Active:
+        {
+            // Dim display after inactivity.
+            if (activePolicy->allowDisplayDimming &&
+                idleTimeMs >= activePolicy->dimTimeoutMs)
+            {
+                DisplayService::Dim();
+                displayState = DisplayPowerState::Dimmed;
+                break;
+            }
+
+            // Turn display off after longer inactivity.
+            if (activePolicy->allowDisplaySleep &&
+                idleTimeMs >= activePolicy->displayOffTimeoutMs)
+            {
+                DisplayService::TurnOff();
+                displayState = DisplayPowerState::Off;
+            }
+
+            break;
+        }
+
+        case DisplayPowerState::Dimmed:
+        {
+            // Turn display off after extended inactivity.
+            if (activePolicy->allowDisplaySleep &&
+                idleTimeMs >= activePolicy->displayOffTimeoutMs)
+            {
+                DisplayService::TurnOff();
+                displayState = DisplayPowerState::Off;
+            }
+
+            break;
+        }
+
+        case DisplayPowerState::Off:
+        {
+            // Deep sleep will be handled here in the next phase.
+            break;
+        }
     }
 }
 
-void PowerManager::RestoreDisplayBrightness()
+void PowerManager::HandleMessage(const Message &message)
 {
-    if (!displayDimmed)
-    {
+    if (message.type != MessageType::UserActivity)
         return;
-    }
 
-    DisplayService::SetBrightness(175);
-    displayDimmed = false;
+    NotifyActivity();
 }

@@ -5,6 +5,7 @@
 #include <LV_Helper.h>
 #include <lvgl.h>
 #include <esp_system.h>
+#include "Messaging/MessageBus.h"
 
 #include "../Screens/SplashScreen.h"
 #include "../Services/Power/PowerService.h"
@@ -15,8 +16,12 @@
 
 static LilyGo_Class amoled;
 
+
 void SentinelOS::Begin()
 {
+
+    MessageBus::Begin();
+    
     Serial.begin(115200);
     delay(3000);
     Serial.println("BOOT CHECK");
