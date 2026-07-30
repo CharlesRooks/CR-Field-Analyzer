@@ -16,6 +16,15 @@
 
 static LilyGo_Class amoled;
 
+static void PublishUserActivity()
+{
+    Message message{};
+    message.type = MessageType::UserActivity;
+    message.timestampMs = millis();
+
+    MessageBus::Publish(message);
+}
+
 
 void SentinelOS::Begin()
 {
@@ -83,23 +92,20 @@ void SentinelOS::Update()
         {
             InputEvent event = input.Update();
 
+            if (event != InputEvent::None)
+            {
+                PublishUserActivity();
+            }
+
             if (event == InputEvent::SwipeLeft)
             {
-                PowerManager::NotifyActivity();
-
                 navigation.Next();
                 frame.SetCurrent(navigation.Current());
             }
             else if (event == InputEvent::SwipeRight)
             {
-                PowerManager::NotifyActivity();
-
                 navigation.Previous();
                 frame.SetCurrent(navigation.Current());
-            }
-            else if (event == InputEvent::Tap)
-            {
-                PowerManager::NotifyActivity();
             }
 
             static uint32_t bootPressedMs = 0;
@@ -110,7 +116,7 @@ void SentinelOS::Update()
 
             if (bootPressed && !previousBootPressed)
             {
-                PowerManager::NotifyActivity();
+                PublishUserActivity();
             }
 
             previousBootPressed = bootPressed;
