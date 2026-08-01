@@ -1,8 +1,16 @@
 #include "NavigationManager.h"
+#include "../Core/Messaging/MessageBus.h"
+
+NavigationManager *NavigationManager::instance = nullptr;
 
 void NavigationManager::Begin(lv_obj_t *area)
 {
     contentArea = area;
+    instance = this;
+
+    MessageBus::Subscribe(
+        MessageType::InputEvent,
+        NavigationManager::HandleMessage);
 }
 
 void NavigationManager::Show(ScreenID screen)
@@ -72,5 +80,23 @@ void NavigationManager::Update()
     if (currentScreen != nullptr)
     {
         currentScreen->Update();
+    }
+}
+
+void NavigationManager::HandleMessage(const Message &message)
+{
+    if (instance == nullptr ||
+        message.type != MessageType::InputEvent)
+    {
+        return;
+    }
+
+    if (message.inputEvent == InputEvent::SwipeLeft)
+    {
+        instance->Next();
+    }
+    else if (message.inputEvent == InputEvent::SwipeRight)
+    {
+        instance->Previous();
     }
 }

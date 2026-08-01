@@ -105,19 +105,12 @@ void SentinelOS::Update()
             {
                 PublishUserActivity();
                 PublishInputEvent(event);
+
+                frame.SetCurrent(navigation.Current());
+                
             }
 
-            if (event == InputEvent::SwipeLeft)
-            {
-                navigation.Next();
-                frame.SetCurrent(navigation.Current());
-            }
-            else if (event == InputEvent::SwipeRight)
-            {
-                navigation.Previous();
-                frame.SetCurrent(navigation.Current());
-            }
-
+            
             static uint32_t bootPressedMs = 0;
             static bool sleepTriggered = false;
             static bool previousBootPressed = false;

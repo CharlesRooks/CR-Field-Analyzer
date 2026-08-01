@@ -7,6 +7,7 @@
 #include "../Screens/ScanScreen.h"
 #include "../Screens/ToolsScreen.h"
 #include "../Screens/SettingsScreen.h"
+#include "../Core/Messaging/MessageTypes.h"
 
 #include <lvgl.h>
 
@@ -37,4 +38,6 @@ private:
 
     Page *currentScreen = nullptr;
     ScreenID current = ScreenID::Dashboard;
+    static void HandleMessage(const Message &message);
+    static NavigationManager *instance;
 };
