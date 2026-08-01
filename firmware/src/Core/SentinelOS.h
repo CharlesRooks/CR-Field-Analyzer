@@ -1,9 +1,10 @@
 #pragma once
 
 #include "../Managers/NavigationManager.h"
-#include <stdint.h>
 #include "../Managers/InputManager.h"
 #include "../UI/ApplicationFrame.h"
+#include "Messaging/MessageTypes.h"
+#include <stdint.h>
 
 enum class AppState
 {
@@ -19,6 +20,9 @@ public:
     void Update();
 
 private:
+    static SentinelOS *instance;
+    static void HandleMessage(const Message &message);
+
     AppState currentState = AppState::Boot;
     uint32_t stateStartMs = 0;
 

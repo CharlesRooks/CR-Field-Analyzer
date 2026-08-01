@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include "../ScreenID.h"
 
 // Provides the InputEvent enum
 #include "../../Managers/InputManager.h"
@@ -14,6 +15,7 @@ enum class MessageType : uint8_t
 
     // Input
     InputEvent,
+    NavigationChanged,
 
     // Power
     ChargingStarted,
@@ -50,6 +52,7 @@ struct Message
     union
     {
         InputEvent inputEvent;
+        ScreenID screenId;
 
         int32_t value1;
         uint32_t value2;

@@ -1,5 +1,6 @@
 #include "NavigationManager.h"
 #include "../Core/Messaging/MessageBus.h"
+#include <Arduino.h>
 
 NavigationManager *NavigationManager::instance = nullptr;
 
@@ -49,6 +50,14 @@ void NavigationManager::Show(ScreenID screen)
     }
 
     currentScreen->Show(contentArea);
+
+    Message message{};
+    message.type = MessageType::NavigationChanged;
+    message.timestampMs = millis();
+    message.screenId = current;
+
+    MessageBus::Publish(message);
+    
 }
 
 void NavigationManager::Next()

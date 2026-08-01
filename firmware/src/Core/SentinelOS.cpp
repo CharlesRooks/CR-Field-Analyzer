@@ -16,6 +16,8 @@
 
 static LilyGo_Class amoled;
 
+SentinelOS *SentinelOS::instance = nullptr;
+
 static void PublishUserActivity()
 {
     Message message{};
@@ -39,6 +41,12 @@ void SentinelOS::Begin()
 {
 
     MessageBus::Begin();
+
+    instance = this;
+
+    MessageBus::Subscribe(
+        MessageType::NavigationChanged,
+        SentinelOS::HandleMessage);
     
     Serial.begin(115200);
     delay(3000);
@@ -106,8 +114,6 @@ void SentinelOS::Update()
                 PublishUserActivity();
                 PublishInputEvent(event);
 
-                frame.SetCurrent(navigation.Current());
-                
             }
 
             
@@ -176,7 +182,6 @@ void SentinelOS::ChangeState(AppState newState)
             frame.Show(ScreenID::Dashboard);
             navigation.Begin(frame.GetContentArea());
             navigation.Show(ScreenID::Dashboard);
-            frame.SetCurrent(navigation.Current());
             Serial.println("State: Running");
             break;
 
@@ -184,4 +189,15 @@ void SentinelOS::ChangeState(AppState newState)
         default:
             break;
     }
+}
+
+void SentinelOS::HandleMessage(const Message &message)
+{
+    if (instance == nullptr ||
+        message.type != MessageType::NavigationChanged)
+    {
+        return;
+    }
+
+    instance->frame.SetCurrent(message.screenId);
 }
