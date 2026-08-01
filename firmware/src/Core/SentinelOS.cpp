@@ -25,6 +25,15 @@ static void PublishUserActivity()
     MessageBus::Publish(message);
 }
 
+static void PublishInputEvent(InputEvent event)
+{
+    Message message{};
+    message.type = MessageType::InputEvent;
+    message.timestampMs = millis();
+    message.inputEvent = event;
+
+    MessageBus::Publish(message);
+}
 
 void SentinelOS::Begin()
 {
@@ -95,6 +104,7 @@ void SentinelOS::Update()
             if (event != InputEvent::None)
             {
                 PublishUserActivity();
+                PublishInputEvent(event);
             }
 
             if (event == InputEvent::SwipeLeft)
