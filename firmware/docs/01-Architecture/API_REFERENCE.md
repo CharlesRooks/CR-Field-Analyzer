@@ -110,22 +110,120 @@ auto uptime = SystemService::GetFormattedUptime();
 
 ---
 
-# NavigationManager
+## Core InputEvent
+
+Header
+
+```text
+src/Core/InputEvent.h
+```
 
 Purpose
 
-Controls application page navigation.
+Defines the normalized input events shared by `InputManager`, `MessageTypes`, and event subscribers without creating a dependency on a manager implementation.
 
-(Currently under development.)
+### Values
 
-Planned methods
+| Value | Description |
+|-------|-------------|
+| `None` | No completed input gesture |
+| `SwipeLeft` | Completed horizontal swipe to the left |
+| `SwipeRight` | Completed horizontal swipe to the right |
+| `Tap` | Completed tap gesture |
+
+---
+
+## MessageBus
+
+Header
+
+```text
+src/Core/Messaging/MessageBus.h
+```
+
+Purpose
+
+Provides lightweight synchronous publish/subscribe messaging between SentinelOS components.
+
+### Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `Begin()` | `void` | Clears all subscriptions and resets the bus |
+| `Subscribe(type, handler)` | `bool` | Registers a handler for a message type |
+| `Publish(message)` | `void` | Immediately invokes matching subscribers |
+
+### Subscription Behaviour
+
+- The bus supports a maximum of 16 subscriptions.
+- `MessageType::None` and null handlers are rejected.
+- Re-registering the same message type and handler is treated as success without creating a duplicate subscription.
+- `Subscribe()` returns `false` when registration is invalid or capacity is exhausted.
+- Subscription failures must be logged by the calling component.
+
+### Dispatch Behaviour
+
+- Dispatch is synchronous.
+- `Publish()` does not queue, retain, or copy messages for later processing.
+- Handlers execute before `Publish()` returns.
+- A handler may publish another message, creating nested synchronous dispatch.
+- Handlers must remain short, non-blocking, and must not modify subscriptions during dispatch.
+
+### Active Messages
+
+| Message | Publisher | Subscriber | Payload |
+|---------|-----------|------------|---------|
+| `UserActivity` | `InputManager`, `SentinelOS` for the BOOT button | `PowerManager` | None |
+| `InputEvent` | `InputManager` | `NavigationManager` | `InputEvent` |
+| `NavigationChanged` | `NavigationManager` | `SentinelOS` | `ScreenID` |
+
+The remaining message types in `MessageTypes.h` are reserved for future power, display, sleep, application, Wi-Fi, and notification event flows.
+
+---
+
+## InputManager
+
+Header
+
+```text
+src/Managers/InputManager.h
+```
+
+Purpose
+
+Normalizes raw touch-controller data into high-level input events and publishes completed gestures through `MessageBus`.
+
+### Methods
 
 | Method | Purpose |
-|---------|----------|
-| Show() | Display page |
-| Next() | Next page |
-| Previous() | Previous page |
-| Current() | Current page |
+|--------|---------|
+| `Begin()` | Attach the AMOLED device used for touch input |
+| `Update()` | Poll touch input, classify completed gestures, and publish events |
+
+---
+
+## NavigationManager
+
+Header
+
+```text
+src/Managers/NavigationManager.h
+```
+
+Purpose
+
+Owns the active screen, responds to published input events, and publishes navigation changes.
+
+### Methods
+
+| Method | Purpose |
+|--------|---------|
+| `Begin()` | Attach the frame content area and subscribe to input events |
+| `Show()` | Display a specific screen and publish `NavigationChanged` |
+| `Next()` | Move to the next screen |
+| `Previous()` | Move to the previous screen |
+| `Update()` | Refresh the active page |
+| `Current()` | Return the active `ScreenID` |
 
 ---
 
@@ -150,7 +248,6 @@ Current methods
 
 Planned Services
 
-- BatteryService
 - WiFiService
 - BluetoothService
 - StorageService
@@ -159,14 +256,12 @@ Planned Services
 
 Planned Managers
 
-- NavigationManager
 - ModuleManager
 
 Planned Widgets
 
-- TitleBar
-- NavigationBar
-- StatusBar
+- DialogManager
+- IconLibrary
 
 ---
 

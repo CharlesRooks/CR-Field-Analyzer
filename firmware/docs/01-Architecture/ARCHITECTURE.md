@@ -235,7 +235,9 @@ Responsibilities:
 Current Classes
 
 - SentinelOS
-- ApplicationFrame
+- MessageBus
+- MessageTypes
+- InputEvent
 
 ---
 
@@ -255,6 +257,7 @@ Responsibilities:
 
 Current Classes
 
+- ApplicationFrame
 - Theme
 - HeaderBar
 - NavigationBar
@@ -302,6 +305,7 @@ Current Services
 - SystemService
 - PowerService
 - SleepService
+- DisplayService
 
 Planned Services
 
@@ -326,9 +330,6 @@ Current Managers
 
 - NavigationManager
 - InputManager
-
-Planned Managers
-
 - PowerManager
 
 Responsibilities:
@@ -355,33 +356,93 @@ Examples:
 
 # Current Project Structure
 
-```
+```text
 firmware/
-
-src/
-
-    Core/
-
-    UI/
-
-    Screens/
-
-    Services/
-
-    Hardware/
-
-include/
-
-lib/
-
-platformio.ini
-
-CHANGELOG.md
-
-ROADMAP.md
-
-ARCHITECTURE.md
+├── src/
+│   ├── Core/
+│   │   ├── Messaging/
+│   │   ├── InputEvent.h
+│   │   ├── Page.h
+│   │   ├── ScreenID.h
+│   │   └── SentinelOS.*
+│   ├── Managers/
+│   ├── Screens/
+│   ├── Services/
+│   └── UI/
+│       ├── Views/
+│       └── Widgets/
+├── docs/
+│   ├── 01-Architecture/
+│   ├── 02-Development/
+│   ├── 03-UI/
+│   └── 04-Services/
+├── include/
+├── lib/
+└── platformio.ini
 ```
+
+---
+
+
+# Event and Messaging Architecture
+
+SentinelOS uses a lightweight synchronous MessageBus to decouple event producers from event consumers.
+
+```text
+Touch Hardware
+      │
+      ▼
+InputManager
+      ├── UserActivity ───────────────► PowerManager
+      │
+      └── InputEvent ────────────────► NavigationManager
+                                             │
+                                             └── NavigationChanged
+                                                        │
+                                                        ▼
+                                                    SentinelOS
+                                                        │
+                                                        ▼
+                                                ApplicationFrame
+```
+
+The BOOT button is owned by `SentinelOS`. A button press publishes `UserActivity`, while the two-second long-press currently invokes `SleepService` directly.
+
+## Active Message Flows
+
+| Message | Publisher | Subscriber | Purpose |
+|---------|-----------|------------|---------|
+| `UserActivity` | `InputManager`; `SentinelOS` for BOOT-button activity | `PowerManager` | Reset idle time and restore the display |
+| `InputEvent` | `InputManager` | `NavigationManager` | Carry `SwipeLeft`, `SwipeRight`, or `Tap` |
+| `NavigationChanged` | `NavigationManager` | `SentinelOS` | Synchronize `ApplicationFrame` with the active `ScreenID` |
+
+Power, display, sleep, application, Wi-Fi, and notification message types are reserved for future event flows.
+
+## MessageBus Characteristics
+
+- Fixed capacity of 16 subscriptions.
+- Static function-pointer handlers.
+- Synchronous dispatch: handlers run before `Publish()` returns.
+- Nested publication is supported and already used by navigation.
+- Messages are not queued, retained, or replayed.
+- Duplicate subscriptions for the same type and handler are ignored as successful.
+- `MessageType::None`, null handlers, and registrations beyond capacity are rejected.
+- Callers must check subscription results and log failures.
+- Handlers must be short and non-blocking.
+- Handlers must not add or alter subscriptions during dispatch.
+
+## Dependency Direction
+
+Shared event definitions belong in Core rather than inside a manager.
+
+```text
+Core/InputEvent.h
+      ▲             ▲
+      │             │
+InputManager   MessageTypes
+```
+
+This prevents the messaging layer from depending on `InputManager` and keeps event contracts independent from event producers.
 
 ---
 
@@ -413,6 +474,12 @@ ARCHITECTURE.md
     
 13. Services own capability.
 
+14. Event contracts belong in Core and must not depend on Managers.
+
+15. Components publish events rather than directly invoking another component's internal behaviour when an event contract exists.
+
+16. Message handlers must remain short, non-blocking, and safe for synchronous nested dispatch.
+
 ---
 
 # Milestone Roadmap
@@ -423,6 +490,8 @@ Milestone 3  Navigation Framework
 Milestone 4  Adaptive UI Framework
 Milestone 5  Power Management Foundation
 Milestone 6  Power Management Framework
+Milestone 7  Power Management and Sleep
+Milestone 8  MessageBus and Event Architecture
 
 ---
 

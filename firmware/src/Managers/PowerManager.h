@@ -16,16 +16,18 @@ public:
     static void Begin();
     static void Update();
     static const PowerPolicy &GetActivePolicy();
-    static void NotifyActivity();
     static uint32_t GetIdleTimeMs();
 
 private:
     static PowerPolicy usbPolicy;
     static PowerPolicy batteryPolicy;
     static const PowerPolicy *activePolicy;
-    static void SelectActivePolicy();
+
     static uint32_t lastActivityMs;
     static DisplayPowerState displayState;
+
+    static void NotifyActivity();
+    static void SelectActivePolicy();
     static void ApplyDisplayPolicy();
     static void HandleMessage(const Message &message);
 };

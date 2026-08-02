@@ -22,11 +22,33 @@ bool MessageBus::Subscribe(
     MessageType type,
     MessageHandler handler)
 {
-    if (handler == nullptr)
+    if (type == MessageType::None ||
+        handler == nullptr)
+    {
         return false;
+    }
+
+    // Treat an identical existing subscription as successful.
+    // This prevents repeated Begin() calls from registering
+    // the same handler more than once.
+    for (uint8_t index = 0;
+         index < subscriptionCount;
+         ++index)
+    {
+        const Subscription &subscription =
+            subscriptions[index];
+
+        if (subscription.type == type &&
+            subscription.handler == handler)
+        {
+            return true;
+        }
+    }
 
     if (subscriptionCount >= MaxSubscribers)
+    {
         return false;
+    }
 
     subscriptions[subscriptionCount].type = type;
     subscriptions[subscriptionCount].handler = handler;

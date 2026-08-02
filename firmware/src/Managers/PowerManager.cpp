@@ -42,9 +42,13 @@ void PowerManager::Begin()
 
     SelectActivePolicy();
 
-    MessageBus::Subscribe(
-    MessageType::UserActivity,
-    PowerManager::HandleMessage);
+    if (!MessageBus::Subscribe(
+        MessageType::UserActivity,
+        PowerManager::HandleMessage))
+    {
+        Serial.println(
+            "ERROR: PowerManager failed to subscribe to UserActivity");
+    }
 }
 
 void PowerManager::NotifyActivity()

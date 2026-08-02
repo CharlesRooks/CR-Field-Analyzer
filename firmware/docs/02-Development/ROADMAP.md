@@ -1,6 +1,6 @@
 # SentinelOS Roadmap
 
-**Current Version:** v0.5.0 (Power Management)
+**Current Version:** v0.5.0 (Power Management and Core Event Architecture)
 
 ---
 
@@ -72,12 +72,31 @@
 - ✔ SleepService framework
 - ✔ Deep sleep validation
 - ✔ BOOT wake source
-- ⬜ Display dimming
-- ⬜ Display sleep
+- ✔ Display dimming
+- ✔ Display sleep
 - ⬜ Automatic sleep
-- ⬜ Power policies
+- ✔ Power policies
 
 **Status:** In Progress
+
+---
+
+## ✅ Architecture Milestone 8 – MessageBus and Event Architecture
+
+- ✔ MessageBus framework
+- ✔ User-activity event flow
+- ✔ Input-event publication from InputManager
+- ✔ NavigationManager input subscription
+- ✔ Navigation-change event flow
+- ✔ ApplicationFrame synchronization through SentinelOS
+- ✔ Core `InputEvent` contract
+- ✔ Duplicate-subscription prevention
+- ✔ Invalid-subscription validation
+- ✔ Subscription-failure diagnostics
+- ✔ Synchronous nested-dispatch documentation
+- ✔ Hardware regression validation
+
+**Status:** Complete
 
 ---
 

@@ -3,13 +3,7 @@
 #include <Arduino.h>
 #include <LilyGo_AMOLED.h>
 
-enum class InputEvent
-{
-    None,
-    SwipeLeft,
-    SwipeRight,
-    Tap
-};
+#include "../Core/InputEvent.h"
 
 class InputManager
 {

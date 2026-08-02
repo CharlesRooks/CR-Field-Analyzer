@@ -2,6 +2,43 @@
 
 All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 
+## [Unreleased]
+
+### Added
+- MessageBus framework for synchronous publish/subscribe communication.
+- `UserActivity`, `InputEvent`, and `NavigationChanged` event flows.
+- Core `InputEvent` contract shared by input and messaging components.
+- Navigation-change messages carrying the active `ScreenID`.
+- Subscription diagnostics for SentinelOS, NavigationManager, and PowerManager.
+
+### Changed
+- InputManager now publishes completed touch gestures and user-activity events.
+- NavigationManager now consumes `InputEvent` messages and publishes `NavigationChanged`.
+- PowerManager now receives user activity through MessageBus.
+- SentinelOS now coordinates ApplicationFrame updates from navigation-change messages.
+- `PowerManager::NotifyActivity()` is now private to prevent direct event-path bypass.
+- Message types not yet implemented are explicitly marked as reserved.
+
+### Hardened
+- Duplicate subscriptions for the same message type and handler are prevented.
+- Invalid subscriptions using `MessageType::None` or null handlers are rejected.
+- Subscription-capacity failures are surfaced through serial diagnostics.
+- MessageBus initialization and serial diagnostic ordering were corrected.
+
+### Technical
+- MessageBus supports 16 fixed subscriptions without dynamic allocation.
+- Dispatch is synchronous and supports nested publication.
+- Messages are not queued, retained, or replayed.
+- Handlers are required to remain short and non-blocking.
+- The messaging layer no longer depends on InputManager.
+
+### Verified
+- Swipe-left and swipe-right navigation through MessageBus.
+- Tap activity without unintended navigation.
+- Display dimming, display-off, and touch wake behaviour.
+- BOOT-button activity and two-second deep-sleep entry.
+- No subscription errors during hardware regression testing.
+
 ## [0.5.0-alpha] - 2026-07-11
 
 ### Added

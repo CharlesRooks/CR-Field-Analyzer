@@ -9,9 +9,13 @@ void NavigationManager::Begin(lv_obj_t *area)
     contentArea = area;
     instance = this;
 
-    MessageBus::Subscribe(
+    if (!MessageBus::Subscribe(
         MessageType::InputEvent,
-        NavigationManager::HandleMessage);
+        NavigationManager::HandleMessage))
+    {
+        Serial.println(
+            "ERROR: NavigationManager failed to subscribe to InputEvent");
+    }
 }
 
 void NavigationManager::Show(ScreenID screen)

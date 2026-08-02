@@ -29,17 +29,21 @@ static void PublishUserActivity()
 
 void SentinelOS::Begin()
 {
-
     MessageBus::Begin();
+
+    Serial.begin(115200);
+    delay(3000);
 
     instance = this;
 
-    MessageBus::Subscribe(
-        MessageType::NavigationChanged,
-        SentinelOS::HandleMessage);
-    
-    Serial.begin(115200);
-    delay(3000);
+    if (!MessageBus::Subscribe(
+            MessageType::NavigationChanged,
+            SentinelOS::HandleMessage))
+    {
+        Serial.println(
+            "ERROR: SentinelOS failed to subscribe to NavigationChanged");
+    }
+
     Serial.println("BOOT CHECK");
 
     Serial.println();

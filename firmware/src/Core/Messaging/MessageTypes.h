@@ -1,45 +1,45 @@
 #pragma once
 
 #include <stdint.h>
-#include "../ScreenID.h"
 
-// Provides the InputEvent enum
-#include "../../Managers/InputManager.h"
+#include "../ScreenID.h"
+#include "../InputEvent.h"
+
 
 enum class MessageType : uint8_t
 {
     None = 0,
 
-    // System
+    // Active system messages
     UserActivity,
 
-    // Input
+    // Active input and navigation messages
     InputEvent,
     NavigationChanged,
 
-    // Power
+    // Reserved: power events
     ChargingStarted,
     ChargingStopped,
     BatteryLevelChanged,
     BatteryLow,
 
-    // Display
+    // Reserved: display events
     DisplayDimmed,
     DisplayTurnedOn,
     DisplayTurnedOff,
 
-    // Sleep
+    // Reserved: sleep events
     SleepEntering,
     SleepExited,
 
-    // Applications
+    // Reserved: application events
     ApplicationChanged,
 
-    // WiFi
+    // Reserved: Wi-Fi events
     WiFiScanStarted,
     WiFiScanCompleted,
 
-    // Notifications
+    // Reserved: notification events
     NotificationRaised
 };
 
