@@ -15,7 +15,7 @@ class InputManager
 {
 public:
     void Begin(LilyGo_AMOLED *device);
-    InputEvent Update();
+    void Update();
 
 private:
     LilyGo_AMOLED *amoled = nullptr;
@@ -31,4 +31,6 @@ private:
     static constexpr int16_t SWIPE_THRESHOLD_X = 60;
     static constexpr int16_t SWIPE_LIMIT_Y = 80;
     static constexpr uint32_t MAX_GESTURE_MS = 800;
+
+      void PublishEvent(InputEvent event);
 };

@@ -27,16 +27,6 @@ static void PublishUserActivity()
     MessageBus::Publish(message);
 }
 
-static void PublishInputEvent(InputEvent event)
-{
-    Message message{};
-    message.type = MessageType::InputEvent;
-    message.timestampMs = millis();
-    message.inputEvent = event;
-
-    MessageBus::Publish(message);
-}
-
 void SentinelOS::Begin()
 {
 
@@ -107,14 +97,7 @@ void SentinelOS::Update()
 
         case AppState::Running:
         {
-            InputEvent event = input.Update();
-
-            if (event != InputEvent::None)
-            {
-                PublishUserActivity();
-                PublishInputEvent(event);
-
-            }
+            input.Update();
 
             
             static uint32_t bootPressedMs = 0;
