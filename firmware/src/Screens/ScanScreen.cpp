@@ -116,6 +116,49 @@ void ScanScreen::CreateContent()
         Theme::Muted(),
         0);
 
+        scanButton =
+            lv_btn_create(header);
+
+        lv_obj_set_size(
+            scanButton,
+            82,
+            30);
+
+        lv_obj_set_style_bg_color(
+            scanButton,
+            Theme::Accent(),
+            0);
+
+        lv_obj_set_style_bg_opa(
+            scanButton,
+            LV_OPA_COVER,
+            0);
+
+        lv_obj_set_style_opa(
+            scanButton,
+            LV_OPA_50,
+            LV_PART_MAIN | LV_STATE_DISABLED);
+
+        lv_obj_add_event_cb(
+            scanButton,
+            ScanScreen::HandleScanButton,
+            LV_EVENT_CLICKED,
+            nullptr);
+
+        scanButtonLabel =
+            lv_label_create(scanButton);
+
+        lv_label_set_text(
+            scanButtonLabel,
+            "Scan");
+
+        lv_obj_set_style_text_color(
+            scanButtonLabel,
+            Theme::Text(),
+            0);
+
+        lv_obj_center(scanButtonLabel);
+
     networkList =
         lv_obj_create(layout);
 
@@ -190,6 +233,8 @@ void ScanScreen::RefreshFromService()
 
     const uint8_t networkCount =
         WiFiService::GetNetworkCount();
+
+    UpdateScanButton(state);
 
     lv_obj_clean(networkList);
 
@@ -266,6 +311,37 @@ void ScanScreen::RefreshFromService()
     displayedState = state;
     displayedNetworkCount = networkCount;
     refreshPending = false;
+}
+
+void ScanScreen::UpdateScanButton(
+    WiFiScanState state)
+{
+    if (scanButton == nullptr ||
+        scanButtonLabel == nullptr)
+    {
+        return;
+    }
+
+    if (state == WiFiScanState::Scanning)
+    {
+        lv_obj_add_state(
+            scanButton,
+            LV_STATE_DISABLED);
+
+        lv_label_set_text(
+            scanButtonLabel,
+            "Scanning");
+    }
+    else
+    {
+        lv_obj_clear_state(
+            scanButton,
+            LV_STATE_DISABLED);
+
+        lv_label_set_text(
+            scanButtonLabel,
+            "Scan");
+    }
 }
 
 void ScanScreen::AddMessageRow(
@@ -403,6 +479,41 @@ const char *ScanScreen::SecurityToText(
         case WiFiSecurity::Unknown:
         default:
             return "Unknown";
+    }
+}
+
+void ScanScreen::HandleScanButton(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr)
+    {
+        return;
+    }
+
+    if (lv_event_get_code(event) !=
+        LV_EVENT_CLICKED)
+    {
+        return;
+    }
+
+    if (WiFiService::GetState() ==
+        WiFiScanState::Scanning)
+    {
+        return;
+    }
+
+    const bool started =
+        WiFiService::StartScan();
+
+    instance->refreshPending = true;
+
+    if (!started &&
+        WiFiService::GetState() !=
+            WiFiScanState::Scanning)
+    {
+        Serial.println(
+            "ScanScreen: Scan request failed");
     }
 }
 
