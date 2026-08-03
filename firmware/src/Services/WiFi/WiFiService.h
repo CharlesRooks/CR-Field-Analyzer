@@ -1,6 +1,7 @@
 #pragma once
 
 #include "WiFiTypes.h"
+
 #include <stdint.h>
 
 class WiFiService
@@ -11,8 +12,9 @@ public:
     static void Begin();
     static void Update();
 
-    static WiFiScanState GetState();
+    static bool StartScan();
 
+    static WiFiScanState GetState();
     static uint8_t GetNetworkCount();
 
     static const WiFiNetworkInfo *GetNetwork(
@@ -25,4 +27,8 @@ private:
     static uint8_t networkCount;
 
     static void ClearResults();
+    static void CopyResults(int16_t resultCount);
+
+    static WiFiSecurity MapSecurity(
+        uint8_t encryptionType);
 };

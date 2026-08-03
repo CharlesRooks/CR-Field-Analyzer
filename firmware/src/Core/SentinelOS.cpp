@@ -12,6 +12,7 @@
 #include "../Services/Power/SleepService.h"
 #include "../Services/Display/DisplayService.h"
 #include "../Managers/PowerManager.h"
+#include "../Services/WiFi/WiFiService.h"
 
 
 static LilyGo_Class amoled;
@@ -78,12 +79,15 @@ void SentinelOS::Begin()
 
     DisplayService::Begin(&amoled);
 
+    WiFiService::Begin();
+
     Serial.printf(
         "Wake reason: %s\n",
         SleepService::GetWakeReasonText()
     );
 
     ChangeState(AppState::Splash);
+
 }
 
 void SentinelOS::Update()
@@ -137,6 +141,7 @@ void SentinelOS::Update()
             }
 
             PowerService::Update();
+            WiFiService::Update();
             PowerManager::Update();
             frame.Update();
             navigation.Update();
@@ -169,6 +174,9 @@ void SentinelOS::ChangeState(AppState newState)
             frame.Show(ScreenID::Dashboard);
             navigation.Begin(frame.GetContentArea());
             navigation.Show(ScreenID::Dashboard);
+
+            WiFiService::StartScan();
+
             Serial.println("State: Running");
             break;
 
