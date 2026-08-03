@@ -1,7 +1,6 @@
 #pragma once
 
 #include "WiFiTypes.h"
-
 #include <stdint.h>
 
 class WiFiService
@@ -31,4 +30,7 @@ private:
 
     static WiFiSecurity MapSecurity(
         uint8_t encryptionType);
+
+    static void PublishScanStarted();
+    static void PublishScanCompleted();
 };

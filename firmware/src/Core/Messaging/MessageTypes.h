@@ -35,7 +35,7 @@ enum class MessageType : uint8_t
     // Reserved: application events
     ApplicationChanged,
 
-    // Reserved: Wi-Fi events
+    // Active Wi-Fi messages
     WiFiScanStarted,
     WiFiScanCompleted,
 
@@ -53,6 +53,8 @@ struct Message
     {
         InputEvent inputEvent;
         ScreenID screenId;
+
+        uint8_t wifiNetworkCount;
 
         int32_t value1;
         uint32_t value2;

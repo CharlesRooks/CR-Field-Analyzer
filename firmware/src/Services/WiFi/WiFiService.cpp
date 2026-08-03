@@ -4,6 +4,8 @@
 #include <WiFi.h>
 #include <cstring>
 
+#include "../../Core/Messaging/MessageBus.h"
+
 WiFiScanState WiFiService::state =
     WiFiScanState::Idle;
 
@@ -65,6 +67,8 @@ bool WiFiService::StartScan()
 
     state = WiFiScanState::Scanning;
 
+    PublishScanStarted();
+
     Serial.println("WiFiService: Scan started");
 
     return true;
@@ -102,6 +106,8 @@ void WiFiService::Update()
     WiFi.scanDelete();
 
     state = WiFiScanState::Complete;
+
+    PublishScanCompleted();
 
     Serial.printf(
         "WiFiService: Scan complete, %u networks cached\n",
@@ -251,4 +257,23 @@ WiFiSecurity WiFiService::MapSecurity(
         default:
             return WiFiSecurity::Unknown;
     }
+}
+
+void WiFiService::PublishScanStarted()
+{
+    Message message{};
+    message.type = MessageType::WiFiScanStarted;
+    message.timestampMs = millis();
+
+    MessageBus::Publish(message);
+}
+
+void WiFiService::PublishScanCompleted()
+{
+    Message message{};
+    message.type = MessageType::WiFiScanCompleted;
+    message.timestampMs = millis();
+    message.wifiNetworkCount = networkCount;
+
+    MessageBus::Publish(message);
 }
