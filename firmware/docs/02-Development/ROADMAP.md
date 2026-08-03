@@ -1,6 +1,6 @@
 # SentinelOS Roadmap
 
-**Current Version:** v0.5.0 (Power Management and Core Event Architecture)
+**Current Version:** v0.5.0 (Power Management Complete and Core Event Architecture)
 
 ---
 
@@ -53,7 +53,7 @@
 
 ---
 
-### 🟨 v0.5.0 – Power Management
+### ✅ v0.5.0 – Power Management
 
 - ✔ PowerService architecture
 - ✔ PowerInfo data model
@@ -74,10 +74,13 @@
 - ✔ BOOT wake source
 - ✔ Display dimming
 - ✔ Display sleep
-- ⬜ Automatic sleep
+- ✔ Automatic sleep
 - ✔ Power policies
+- ✔ Normal-brightness preservation
+- ✔ Battery-to-USB policy transitions
+- ✔ USB-to-battery policy transitions
 
-**Status:** In Progress
+**Status:** Complete
 
 ---
 
@@ -95,6 +98,24 @@
 - ✔ Subscription-failure diagnostics
 - ✔ Synchronous nested-dispatch documentation
 - ✔ Hardware regression validation
+
+**Status:** Complete
+
+---
+
+## ✅ Architecture Milestone 9 – Automatic Power Management
+
+- ✔ Battery idle-time policy enforcement
+- ✔ Display dimming after 30 seconds
+- ✔ Display-off after 60 seconds
+- ✔ Automatic deep sleep after 120 seconds
+- ✔ Normal-brightness restoration from dimmed state
+- ✔ Normal-brightness restoration from display-off state
+- ✔ Battery-to-USB policy transition handling
+- ✔ USB-to-battery policy transition handling
+- ✔ Idle-timer reset on power-source transition
+- ✔ Automatic deep-sleep and BOOT-wake validation
+- ✔ Power architecture and policy documentation
 
 **Status:** Complete
 

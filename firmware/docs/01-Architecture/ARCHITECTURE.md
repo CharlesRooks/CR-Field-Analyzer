@@ -446,6 +446,44 @@ This prevents the messaging layer from depending on `InputManager` and keeps eve
 
 ---
 
+
+# Power Management Architecture
+
+SentinelOS separates power telemetry, policy, display capability, and sleep capability.
+
+```text
+PowerService ──cached power state──► PowerManager
+                                        │
+                           ┌────────────┴────────────┐
+                           ▼                         ▼
+                    DisplayService              SleepService
+                  brightness/on/off          deep sleep/wake
+```
+
+`PowerService` owns PMU access and cached power telemetry. `PowerManager` owns USB and battery policy selection, idle timing, the display power-state machine, automatic deep-sleep decisions, and power-source transition handling. `DisplayService` owns brightness and display on/off capability. `SleepService` owns deep sleep and wake-source configuration.
+
+The default battery sequence is:
+
+```text
+30 seconds idle  → Display dims
+60 seconds idle  → Display turns off
+120 seconds idle → Deep sleep
+```
+
+The USB policy disables automatic dimming, display-off, and deep sleep.
+
+A power-source transition resets the idle timer and returns the display to its normal active brightness. This prevents a dark display after connecting USB and prevents immediate dimming after disconnecting USB.
+
+Normal brightness and temporary dim brightness are tracked separately so display-off does not overwrite the brightness level that should be restored.
+
+Detailed behaviour is documented in:
+
+- `docs/01-Architecture/POWER_ARCHITECTURE.md`
+- `docs/01-Architecture/POWER_POLICY.md`
+- `docs/04-Services/POWER_SERVICE.md`
+
+---
+
 # Design Rules
 
 1. `main.cpp` should remain minimal.
@@ -492,6 +530,7 @@ Milestone 5  Power Management Foundation
 Milestone 6  Power Management Framework
 Milestone 7  Power Management and Sleep
 Milestone 8  MessageBus and Event Architecture
+Milestone 9  Automatic Power Management
 
 ---
 

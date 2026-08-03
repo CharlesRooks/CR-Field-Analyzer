@@ -2,11 +2,13 @@
 
 ## Purpose
 
-`PowerService` is the single source of truth for power-related information and control within SentinelOS.
+`PowerService` is the single source of truth for power telemetry within SentinelOS.
 
-It abstracts the LilyGO power-management hardware from the rest of the application and exposes stable, hardware-independent data to views, widgets, and other services.
+It abstracts the LilyGO/BQ25896 power-management hardware and exposes stable, cached, hardware-independent data to managers, views, and widgets.
 
 Application pages and UI components must not access the PMU directly.
+
+`PowerService` reports power state. It does not own display dimming, display-off, deep-sleep timing, or power-policy decisions.
 
 ---
 
@@ -21,48 +23,59 @@ Application pages and UI components must not access the PMU directly.
 - USB/VBUS connection status
 - System supply voltage
 - Cached power-state information
-- Future low-power and sleep operations
+- Power-status formatting
+- Hardware-safe PMU access
 
 ---
 
-## Architecture
+## Power Architecture
 
 ```text
-LilyGO Power Hardware
-        |
-        v
-PowerService
-        |
-        +-- HeaderBar
-        +-- SystemDashboardView
-        +-- Power Management View
-        +-- Low Battery Alerts
+LilyGO / BQ25896 Hardware
+            │
+            ▼
+       PowerService
+    Cached PowerInfo
+       │         │
+       │         └────────► HeaderBar / SystemDashboardView
+       │
+       ▼
+    PowerManager
+       │
+       ├────────► DisplayService
+       └────────► SleepService
 ```
 
-The UI consumes cached values from `PowerService` and never communicates directly with the power-management hardware.
+Ownership:
+
+- `PowerService` owns PMU capability and telemetry.
+- `PowerManager` owns policy and power-state coordination.
+- `DisplayService` owns brightness and display on/off capability.
+- `SleepService` owns deep sleep and wake-source configuration.
+- `PowerPolicy` contains configuration only.
 
 ---
 
 ## Update Model
 
-Power information should not be read from the PMU every time a widget requests a value.
+Power information is not read from the PMU every time a consumer requests a value.
 
 `PowerService` follows a cached-state model:
 
 ```text
 PowerService::Update()
-        |
-        v
+        │
+        ▼
 Read PMU values once
-        |
-        v
+        │
+        ▼
 Update cached PowerInfo
-        |
-        v
-UI reads cached values
+        │
+        ▼
+Managers and UI read cached values
 ```
 
-The initial refresh interval is one second.
+The current refresh interval is one second.
 
 ---
 
@@ -88,7 +101,7 @@ struct PowerInfo
 | Field | Description |
 |---|---|
 | `batteryConnected` | Indicates whether a battery is detected |
-| `charging` | Indicates whether the battery is charging |
+| `charging` | Indicates whether the PMU reports a validated charging state |
 | `usbConnected` | Indicates whether external USB/VBUS power is present |
 | `batteryVoltageMv` | Battery voltage in millivolts |
 | `usbVoltageMv` | USB/VBUS voltage in millivolts |
@@ -97,7 +110,7 @@ struct PowerInfo
 
 ---
 
-## Initial Public API
+## Public API
 
 ```cpp
 class PowerService
@@ -117,47 +130,56 @@ public:
     static uint16_t GetSystemVoltageMv();
 
     static uint8_t GetBatteryPercent();
+
+    static void FormatStatus(
+        char *buffer,
+        size_t bufferSize);
 };
 ```
+
+The exact public header remains the authoritative API contract.
 
 ---
 
 ## Battery Percentage Estimation
 
-Battery percentage is currently estimated from the measured battery voltage.
+Battery percentage is estimated from measured single-cell LiPo voltage.
+
+The current implementation uses a calibrated nonlinear, piecewise voltage-to-percentage curve rather than a linear mapping.
 
 The implementation:
 
-1. Reads the battery voltage from the BQ25896.
-2. Validates that the voltage is within a plausible single-cell battery range.
-3. Clamps the voltage between the configured empty and full thresholds.
-4. Converts the voltage into a percentage from 0–100%.
+1. Reads battery voltage from the BQ25896.
+2. Validates the voltage as a plausible single-cell LiPo reading.
+3. Applies charging-state compensation.
+4. Preserves the last valid discharge estimate while charging where appropriate.
+5. Smooths voltage-settling changes to reduce percentage oscillation.
+6. Locates the voltage between calibrated curve points.
+7. Interpolates the percentage between those points.
+8. Clamps the final estimate to 0–100%.
 
-The current implementation uses a linear voltage-based estimate.
+This provides a practical field indicator but is not equivalent to a dedicated coulomb-counting fuel gauge.
 
-This provides a practical battery indicator but should not be treated as laboratory-grade battery capacity measurement.
+Future accuracy improvements may include:
 
-Future versions may use:
-
-- A nonlinear lithium-battery discharge curve
-- Load compensation
-- Charging-state compensation
-- Battery characterization data
+- Battery characterization under known loads
+- Temperature compensation
+- Runtime modelling
 - Battery-health estimation
 - A dedicated fuel-gauge IC
 
 ---
 
-## Initial Voltage Range
+## Charging-State Handling
 
-The initial implementation will use configurable values similar to:
+Charging state is based on validated BQ25896 charge states.
 
-```cpp
-BATTERY_EMPTY_MV = 3300
-BATTERY_FULL_MV  = 4200
-```
+Charger enablement is conditional on the presence of both:
 
-These values may be adjusted after hardware testing with the actual battery.
+- USB/VBUS power
+- A connected battery
+
+The battery percentage logic compensates for elevated charging voltage and avoids treating charging voltage as a direct discharge-state measurement.
 
 ---
 
@@ -180,9 +202,9 @@ If no battery is connected:
 - `batteryConnected` is `false`
 - `batteryPercent` is `0`
 - Battery voltage may be `0`
-- The UI should display external power status where applicable
+- The UI displays external-power status where applicable
 
-If the PMU device is unavailable, the service should return safe default values and avoid blocking the application.
+If the PMU device is unavailable, the service returns safe default values and avoids blocking SentinelOS.
 
 ---
 
@@ -190,27 +212,30 @@ If the PMU device is unavailable, the service should return safe default values 
 
 ### HeaderBar
 
-The HeaderBar may display:
+The HeaderBar consumes formatted, cached PowerService status.
+
+Example:
 
 ```text
 SentinelOS                     87%
 Dashboard
 ```
 
-Future versions may add charging or USB indicators.
+The status may reflect battery, charging, or USB operation.
 
 ### SystemDashboardView
 
-The system dashboard may include PowerService values such as:
+The dashboard power tile may display:
 
 - Battery percentage
 - Battery voltage
 - Charging state
 - USB power state
+- Current power source
 
-### Power Management View
+### Future Power Management View
 
-A future dedicated view may display:
+A dedicated view may display:
 
 - Battery percentage
 - Battery voltage
@@ -219,8 +244,32 @@ A future dedicated view may display:
 - Charging state
 - Power source
 - Estimated runtime
+- Current policy
 - Brightness controls
 - Sleep controls
+
+---
+
+## PowerManager Integration
+
+`PowerManager` reads `PowerService::IsUSBConnected()` to select the active policy.
+
+Current behaviour:
+
+### USB
+
+- Automatic power saving disabled
+- Display restored to normal active brightness on transition
+- Idle timer reset on transition
+
+### Battery
+
+- Display dims after 30 seconds
+- Display turns off after 60 seconds
+- Deep sleep begins after 120 seconds
+- Idle timer starts fresh when USB is disconnected
+
+Power-management actions are delegated to `DisplayService` and `SleepService`; they are not performed by `PowerService`.
 
 ---
 
@@ -228,18 +277,15 @@ A future dedicated view may display:
 
 Future PowerService capabilities may include:
 
-- Display brightness control
-- Automatic brightness
 - Low-battery warning thresholds
-- Critical-battery shutdown
-- Light sleep
-- Deep sleep
-- Wake-source configuration
+- Critical-battery state reporting
 - Battery runtime estimation
-- Power profiles
 - Charge-current information
 - Battery-health estimation
 - Battery-cycle tracking
+- Power statistics
+
+Display control, sleep control, and policy remain outside PowerService.
 
 ---
 
@@ -248,9 +294,12 @@ Future PowerService capabilities may include:
 1. UI components must not access the PMU directly.
 2. PMU values are read during `PowerService::Update()`.
 3. Public getters return cached values.
-4. Hardware-specific logic remains inside the service.
+4. Hardware-specific PMU logic remains inside PowerService.
 5. Missing hardware must not stop SentinelOS from running.
 6. Battery percentage is identified as an estimate unless a fuel gauge is available.
+7. PowerService reports state; PowerManager owns policy.
+8. DisplayService owns display capability.
+9. SleepService owns deep-sleep capability.
 
 ---
 
@@ -266,25 +315,29 @@ Future PowerService capabilities may include:
 - System voltage monitoring
 - Battery connection inference
 - USB and battery power-source identification
-- Battery percentage estimation
 - One-second cached PMU polling
 - Centralized power-status formatting
 - System Dashboard power tile
 - Persistent HeaderBar power indicator
 - Live switching between USB and battery operation
 - BQ25896 charging-state validation
-- Conditional charger enablement when USB and battery are present
+- Conditional charger enablement
 - Charging-state reporting
 - Charging-voltage percentage compensation
-- Battery percentage smoothing during voltage settling
+- Battery percentage smoothing
 - Piecewise LiPo voltage-to-percentage curve
 - Interpolated battery percentage estimation
 - Calibrated nonlinear battery discharge estimation
+- Integration with USB and battery power-policy selection
+- Automatic display dimming and display-off through PowerManager
+- Automatic battery deep sleep through PowerManager and SleepService
+- Power-source transition handling
+- Normal-brightness restoration across dim and display-off states
 
 ### Remaining
 
 - Low-battery warnings
+- Critical-battery handling
 - Power statistics
-- Sleep-mode preparation
 - Dedicated Power Management view
 - Battery-health and runtime estimation

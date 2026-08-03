@@ -10,20 +10,34 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 - Core `InputEvent` contract shared by input and messaging components.
 - Navigation-change messages carrying the active `ScreenID`.
 - Subscription diagnostics for SentinelOS, NavigationManager, and PowerManager.
+- Automatic battery deep sleep after the configured idle timeout.
+- Power-source transition handling for USB and battery policies.
+- Dedicated power-architecture documentation.
 
 ### Changed
 - InputManager now publishes completed touch gestures and user-activity events.
 - NavigationManager now consumes `InputEvent` messages and publishes `NavigationChanged`.
 - PowerManager now receives user activity through MessageBus.
 - SentinelOS now coordinates ApplicationFrame updates from navigation-change messages.
-- `PowerManager::NotifyActivity()` is now private to prevent direct event-path bypass.
+- `PowerManager::NotifyActivity()` is private to prevent direct event-path bypass.
 - Message types not yet implemented are explicitly marked as reserved.
+- PowerManager now enforces the complete battery sequence: dim, display-off, and deep sleep.
+- Battery-to-USB and USB-to-battery transitions reset idle timing.
+- Power-source transitions return the display to its normal active brightness.
+- PowerService documentation now distinguishes telemetry ownership from policy, display, and sleep ownership.
+
+### Fixed
+- Normal display brightness being overwritten by the temporary dimmed brightness when the display turned off.
+- Display waking at the dimmed brightness instead of the saved normal brightness.
+- A dimmed or off display remaining dark after USB was connected.
+- Immediate dimming risk after USB was disconnected following a long USB-powered session.
 
 ### Hardened
 - Duplicate subscriptions for the same message type and handler are prevented.
 - Invalid subscriptions using `MessageType::None` or null handlers are rejected.
 - Subscription-capacity failures are surfaced through serial diagnostics.
 - MessageBus initialization and serial diagnostic ordering were corrected.
+- DisplayService now tracks temporary dimming separately from the saved normal brightness.
 
 ### Technical
 - MessageBus supports 16 fixed subscriptions without dynamic allocation.
@@ -31,12 +45,21 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 - Messages are not queued, retained, or replayed.
 - Handlers are required to remain short and non-blocking.
 - The messaging layer no longer depends on InputManager.
+- USB policy disables automatic dimming, display-off, and deep sleep.
+- Battery policy defaults to 30-second dim, 60-second display-off, and 120-second deep sleep.
+- PowerManager delegates display actions to DisplayService and deep sleep to SleepService.
 
 ### Verified
 - Swipe-left and swipe-right navigation through MessageBus.
 - Tap activity without unintended navigation.
 - Display dimming, display-off, and touch wake behaviour.
-- BOOT-button activity and two-second deep-sleep entry.
+- Full-brightness restoration from both dimmed and off states.
+- BOOT-button activity and two-second manual deep-sleep entry.
+- Automatic deep sleep while operating on battery.
+- BOOT-button wake after automatic deep sleep.
+- Battery-to-USB transition while dimmed.
+- Battery-to-USB transition while the display was off.
+- USB-to-battery transition with fresh battery-policy timing.
 - No subscription errors during hardware regression testing.
 
 ## [0.5.0-alpha] - 2026-07-11
