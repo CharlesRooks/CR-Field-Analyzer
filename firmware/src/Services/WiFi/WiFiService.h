@@ -16,6 +16,13 @@ public:
     static WiFiScanState GetState();
     static uint8_t GetNetworkCount();
 
+    static constexpr uint8_t Max2_4GHzChannel = 14;
+
+    static uint8_t GetOccupiedChannelCount();
+
+    static const WiFiChannelInfo *GetChannelInfo(
+        uint8_t channel);
+
     static const WiFiNetworkInfo *GetNetwork(
         uint8_t index);
 
@@ -25,10 +32,18 @@ private:
     static WiFiNetworkInfo networks[MaxNetworks];
     static uint8_t networkCount;
 
-    static void ClearResults();
-    static void CopyResults(int16_t resultCount);
+    static WiFiChannelInfo
+        channelInfo[Max2_4GHzChannel + 1];
 
-    static void SortResultsBySignal();
+    static uint8_t occupiedChannelCount;
+
+    static void ClearResults();
+    static void ClearChannelStatistics();
+    
+    static void CopyResults(int16_t resultCount);
+    static void SortResultsBySignal();     
+    static void BuildChannelStatistics();
+    static void LogChannelStatistics();
 
     static WiFiSecurity MapSecurity(
         uint8_t encryptionType);

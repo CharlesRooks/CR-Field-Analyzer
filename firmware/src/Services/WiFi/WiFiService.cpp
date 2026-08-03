@@ -14,6 +14,12 @@ WiFiNetworkInfo
 
 uint8_t WiFiService::networkCount = 0;
 
+WiFiChannelInfo
+    WiFiService::channelInfo[
+        WiFiService::Max2_4GHzChannel + 1];
+
+uint8_t WiFiService::occupiedChannelCount = 0;
+
 void WiFiService::Begin()
 {
     ClearResults();
@@ -112,6 +118,8 @@ void WiFiService::Update()
     Serial.printf(
         "WiFiService: Scan complete, %u networks cached\n",
         networkCount);
+
+    LogChannelStatistics();
 }
 
 WiFiScanState WiFiService::GetState()
@@ -135,6 +143,23 @@ const WiFiNetworkInfo *WiFiService::GetNetwork(
     return &networks[index];
 }
 
+uint8_t WiFiService::GetOccupiedChannelCount()
+{
+    return occupiedChannelCount;
+}
+
+const WiFiChannelInfo *WiFiService::GetChannelInfo(
+    uint8_t channel)
+{
+    if (channel == 0 ||
+        channel > Max2_4GHzChannel)
+    {
+        return nullptr;
+    }
+
+    return &channelInfo[channel];
+}
+
 void WiFiService::ClearResults()
 {
     networkCount = 0;
@@ -144,6 +169,24 @@ void WiFiService::ClearResults()
          ++index)
     {
         networks[index] = WiFiNetworkInfo{};
+    }
+
+    ClearChannelStatistics();
+}
+
+void WiFiService::ClearChannelStatistics()
+{
+    occupiedChannelCount = 0;
+
+    for (uint8_t channel = 0;
+         channel <= Max2_4GHzChannel;
+         ++channel)
+    {
+        channelInfo[channel] =
+            WiFiChannelInfo{};
+
+        channelInfo[channel].channel =
+            channel;
     }
 }
 
@@ -224,6 +267,71 @@ void WiFiService::CopyResults(
         ++networkCount;
 
         SortResultsBySignal();
+        BuildChannelStatistics();
+    }
+}
+
+void WiFiService::BuildChannelStatistics()
+{
+    ClearChannelStatistics();
+
+    int32_t rssiTotals[
+        Max2_4GHzChannel + 1] = {};
+
+    for (uint8_t index = 0;
+         index < networkCount;
+         ++index)
+    {
+        const WiFiNetworkInfo &network =
+            networks[index];
+
+        const uint8_t channel =
+            network.channel;
+
+        if (channel == 0 ||
+            channel > Max2_4GHzChannel)
+        {
+            continue;
+        }
+
+        WiFiChannelInfo &info =
+            channelInfo[channel];
+
+        if (info.networkCount == 0)
+        {
+            ++occupiedChannelCount;
+
+            info.strongestRssi =
+                network.rssi;
+        }
+        else if (network.rssi >
+                 info.strongestRssi)
+        {
+            info.strongestRssi =
+                network.rssi;
+        }
+
+        ++info.networkCount;
+
+        rssiTotals[channel] +=
+            network.rssi;
+    }
+
+    for (uint8_t channel = 1;
+         channel <= Max2_4GHzChannel;
+         ++channel)
+    {
+        WiFiChannelInfo &info =
+            channelInfo[channel];
+
+        if (info.networkCount == 0)
+        {
+            continue;
+        }
+
+        info.averageRssi =
+            rssiTotals[channel] /
+            info.networkCount;
     }
 }
 
@@ -334,4 +442,36 @@ WiFiSignalQuality WiFiService::ClassifySignal(
     }
 
     return WiFiSignalQuality::Poor;
+}
+
+void WiFiService::LogChannelStatistics()
+{
+    Serial.printf(
+        "WiFiService: %u occupied channels\n",
+        occupiedChannelCount);
+
+    for (uint8_t channel = 1;
+         channel <= Max2_4GHzChannel;
+         ++channel)
+    {
+        const WiFiChannelInfo &info =
+            channelInfo[channel];
+
+        if (info.networkCount == 0)
+        {
+            continue;
+        }
+
+        Serial.printf(
+            "WiFiService: CH %u - "
+            "%u network%s, strongest %ld dBm, "
+            "average %ld dBm\n",
+            info.channel,
+            info.networkCount,
+            info.networkCount == 1 ? "" : "s",
+            static_cast<long>(
+                info.strongestRssi),
+            static_cast<long>(
+                info.averageRssi));
+    }
 }

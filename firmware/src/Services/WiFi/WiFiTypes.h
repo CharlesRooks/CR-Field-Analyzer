@@ -50,3 +50,12 @@ struct WiFiNetworkInfo
 
     bool hidden = false;
 };
+
+struct WiFiChannelInfo
+{
+    uint8_t channel = 0;
+    uint8_t networkCount = 0;
+
+    int32_t strongestRssi = -127;
+    int32_t averageRssi = -127;
+};
