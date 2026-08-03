@@ -48,6 +48,9 @@ private:
     void AddNetworkRow(
         const WiFiNetworkInfo &network);
 
+    static const char *SignalQualityToText(
+        WiFiSignalQuality quality);
+
     static const char *SecurityToText(
         WiFiSecurity security);
 };

@@ -10,6 +10,15 @@ enum class WiFiScanState : uint8_t
     Failed
 };
 
+enum class WiFiSignalQuality : uint8_t
+{
+    Unknown = 0,
+    Poor,
+    Fair,
+    Good,
+    Excellent
+};
+
 enum class WiFiSecurity : uint8_t
 {
     Unknown = 0,
@@ -34,6 +43,8 @@ struct WiFiNetworkInfo
 
     int32_t rssi = -127;
     uint8_t channel = 0;
+
+    WiFiSignalQuality signalQuality = WiFiSignalQuality::Unknown;
 
     WiFiSecurity security = WiFiSecurity::Unknown;
 

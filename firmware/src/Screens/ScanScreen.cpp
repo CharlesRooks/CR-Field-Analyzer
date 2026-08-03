@@ -392,8 +392,10 @@ void ScanScreen::AddNetworkRow(
     std::snprintf(
         rowText,
         sizeof(rowText),
-        "%s\nCH %u   %ld dBm   %s",
+        "%s\n%s   CH %u   %ld dBm   %s",
         ssid,
+        SignalQualityToText(
+            network.signalQuality),
         network.channel,
         static_cast<long>(network.rssi),
         SecurityToText(network.security));
@@ -442,6 +444,29 @@ void ScanScreen::AddNetworkRow(
         label,
         LV_OPA_30,
         0);
+}
+
+const char *ScanScreen::SignalQualityToText(
+    WiFiSignalQuality quality)
+{
+    switch (quality)
+    {
+        case WiFiSignalQuality::Excellent:
+            return "Excellent";
+
+        case WiFiSignalQuality::Good:
+            return "Good";
+
+        case WiFiSignalQuality::Fair:
+            return "Fair";
+
+        case WiFiSignalQuality::Poor:
+            return "Poor";
+
+        case WiFiSignalQuality::Unknown:
+        default:
+            return "Unknown";
+    }
 }
 
 const char *ScanScreen::SecurityToText(

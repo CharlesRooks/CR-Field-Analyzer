@@ -28,8 +28,13 @@ private:
     static void ClearResults();
     static void CopyResults(int16_t resultCount);
 
+    static void SortResultsBySignal();
+
     static WiFiSecurity MapSecurity(
         uint8_t encryptionType);
+
+    static WiFiSignalQuality ClassifySignal(
+        int32_t rssi);
 
     static void PublishScanStarted();
     static void PublishScanCompleted();

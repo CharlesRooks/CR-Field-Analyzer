@@ -207,6 +207,9 @@ void WiFiService::CopyResults(
 
         network.rssi = rssi;
 
+        network.signalQuality =
+            ClassifySignal(rssi);
+
         network.channel =
             channel > 0 && channel <= 255
                 ? static_cast<uint8_t>(channel)
@@ -219,6 +222,8 @@ void WiFiService::CopyResults(
             ssid.length() == 0;
 
         ++networkCount;
+
+        SortResultsBySignal();
     }
 }
 
@@ -276,4 +281,57 @@ void WiFiService::PublishScanCompleted()
     message.wifiNetworkCount = networkCount;
 
     MessageBus::Publish(message);
+}
+
+void WiFiService::SortResultsBySignal()
+{
+    if (networkCount < 2)
+    {
+        return;
+    }
+
+    for (uint8_t index = 1;
+         index < networkCount;
+         ++index)
+    {
+        const WiFiNetworkInfo current =
+            networks[index];
+
+        int16_t compareIndex =
+            static_cast<int16_t>(index) - 1;
+
+        while (compareIndex >= 0 &&
+               networks[compareIndex].rssi <
+                   current.rssi)
+        {
+            networks[compareIndex + 1] =
+                networks[compareIndex];
+
+            --compareIndex;
+        }
+
+        networks[compareIndex + 1] =
+            current;
+    }
+}
+
+WiFiSignalQuality WiFiService::ClassifySignal(
+    int32_t rssi)
+{
+    if (rssi >= -55)
+    {
+        return WiFiSignalQuality::Excellent;
+    }
+
+    if (rssi >= -67)
+    {
+        return WiFiSignalQuality::Good;
+    }
+
+    if (rssi >= -75)
+    {
+        return WiFiSignalQuality::Fair;
+    }
+
+    return WiFiSignalQuality::Poor;
 }
