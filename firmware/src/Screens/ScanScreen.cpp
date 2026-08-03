@@ -406,6 +406,10 @@ void ScanScreen::AddNetworkRow(
     lv_label_set_text(
         label,
         rowText);
+    
+    lv_label_set_recolor(
+        label,
+        true);
 
     lv_label_set_long_mode(
         label,
@@ -452,20 +456,20 @@ const char *ScanScreen::SignalQualityToText(
     switch (quality)
     {
         case WiFiSignalQuality::Excellent:
-            return "Excellent";
+            return "#00E676 Excellent#";
 
         case WiFiSignalQuality::Good:
-            return "Good";
+            return "#FFD740 Good#";
 
         case WiFiSignalQuality::Fair:
-            return "Fair";
+            return "#FF9800 Fair#";
 
         case WiFiSignalQuality::Poor:
-            return "Poor";
+            return "#FF5252 Poor#";
 
         case WiFiSignalQuality::Unknown:
         default:
-            return "Unknown";
+            return "#9E9E9E Unknown#";
     }
 }
 
