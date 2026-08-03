@@ -3,7 +3,9 @@
 #include <LilyGo_AMOLED.h>
 
 LilyGo_AMOLED* DisplayService::board = nullptr;
+
 bool DisplayService::displayOn = true;
+bool DisplayService::brightnessDimmed = false;
 
 uint8_t DisplayService::currentBrightness = 175;
 uint8_t DisplayService::savedBrightness = 175;
@@ -12,6 +14,7 @@ void DisplayService::Begin(LilyGo_AMOLED *device)
 {
     board = device;
     displayOn = true;
+    brightnessDimmed = false;
 
     currentBrightness = board->getBrightness();
     savedBrightness = currentBrightness;
@@ -24,6 +27,7 @@ void DisplayService::SetBrightness(uint8_t value)
 
     board->setBrightness(value);
     currentBrightness = value;
+    brightnessDimmed = false;
 }
 
 uint8_t DisplayService::GetBrightness()
@@ -38,12 +42,13 @@ void DisplayService::Dim()
 
     constexpr uint8_t dimBrightness = 60;
 
-    if (currentBrightness > dimBrightness)
+    if (!brightnessDimmed && currentBrightness > 0)
     {
         savedBrightness = currentBrightness;
     }
 
     SetBrightness(dimBrightness);
+    brightnessDimmed = true;
 }
 
 void DisplayService::RestoreBrightness()
@@ -69,6 +74,7 @@ void DisplayService::TurnOn()
     board->setBrightness(restoreLevel);
     currentBrightness = restoreLevel;
     displayOn = true;
+    brightnessDimmed = false;
 }
 
 void DisplayService::TurnOff()
@@ -76,7 +82,9 @@ void DisplayService::TurnOff()
     if (board == nullptr || !displayOn)
         return;
 
-    if (currentBrightness > 0)
+    // Preserve the normal brightness, but do not overwrite it
+    // with the temporary dimmed level.
+    if (!brightnessDimmed && currentBrightness > 0)
     {
         savedBrightness = currentBrightness;
     }
@@ -84,6 +92,7 @@ void DisplayService::TurnOff()
     board->setBrightness(0);
     currentBrightness = 0;
     displayOn = false;
+    brightnessDimmed = false;
 }
 
 bool DisplayService::IsOn()

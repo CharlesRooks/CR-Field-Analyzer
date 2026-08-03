@@ -23,6 +23,7 @@ private:
     static LilyGo_AMOLED *board;
 
     static bool displayOn;
+    static bool brightnessDimmed;
 
     static uint8_t currentBrightness;
     static uint8_t savedBrightness;

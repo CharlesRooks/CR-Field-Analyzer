@@ -4,6 +4,7 @@
 #include "../Services/Power/PowerService.h"
 #include "../Services/Display/DisplayService.h"
 #include "../Core/Messaging/MessageBus.h"
+#include "../Services/Power/SleepService.h"
 
 PowerPolicy PowerManager::usbPolicy;
 PowerPolicy PowerManager::batteryPolicy;
@@ -150,7 +151,15 @@ void PowerManager::ApplyDisplayPolicy()
 
         case DisplayPowerState::Off:
         {
-            // Deep sleep will be handled here in the next phase.
+            if (activePolicy->allowDeepSleep &&
+                idleTimeMs >= activePolicy->deepSleepTimeoutMs)
+            {
+                Serial.println(
+                    "PowerManager: Deep-sleep timeout reached");
+
+                SleepService::EnterDeepSleep();
+            }
+
             break;
         }
     }
