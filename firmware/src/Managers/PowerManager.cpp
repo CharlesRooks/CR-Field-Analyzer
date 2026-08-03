@@ -91,14 +91,48 @@ const PowerPolicy &PowerManager::GetActivePolicy()
 
 void PowerManager::SelectActivePolicy()
 {
-    if (PowerService::IsUSBConnected())
+    const bool usbConnected =
+        PowerService::IsUSBConnected();
+
+    const PowerPolicy *selectedPolicy =
+        usbConnected
+            ? &usbPolicy
+            : &batteryPolicy;
+
+    // No power-source transition occurred.
+    if (activePolicy == selectedPolicy)
     {
-        activePolicy = &usbPolicy;
+        return;
     }
-    else
+
+    activePolicy = selectedPolicy;
+
+    // Begin the new policy's idle period from the moment
+    // the power source changes.
+    lastActivityMs = millis();
+
+    // A power-source transition should always return the
+    // display to its fully active state.
+    switch (displayState)
     {
-        activePolicy = &batteryPolicy;
+        case DisplayPowerState::Active:
+            DisplayService::RestoreBrightness();
+            break;
+
+        case DisplayPowerState::Dimmed:
+            DisplayService::RestoreBrightness();
+            break;
+
+        case DisplayPowerState::Off:
+            DisplayService::TurnOn();
+            break;
     }
+
+    displayState = DisplayPowerState::Active;
+
+    Serial.printf(
+        "PowerManager: Active policy changed to %s\n",
+        usbConnected ? "USB" : "Battery");
 }
 
 void PowerManager::ApplyDisplayPolicy()
