@@ -14,8 +14,12 @@ void NavigationManager::Begin(lv_obj_t *area)
         NavigationManager::HandleMessage))
     {
         Serial.println(
-            "ERROR: NavigationManager failed to subscribe to InputEvent");
+            "NavigationManager: InputEvent "
+            "subscription failed");
     }
+
+    scan.Begin();
+
 }
 
 void NavigationManager::Show(ScreenID screen)
