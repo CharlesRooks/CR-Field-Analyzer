@@ -27,11 +27,20 @@ WiFiChannelAssessment
 WiFiChannelRecommendation
     WiFiService::channelRecommendation{};
 
+uint16_t
+    WiFiService::candidateScoreHistory
+        [WiFiService::CandidateChannelCount]
+        [WiFiService::ScoreHistoryDepth] = {};
+
+uint8_t WiFiService::scoreHistoryCount = 0;
+uint8_t WiFiService::scoreHistoryWriteIndex = 0;
+
 uint8_t WiFiService::recommendedCandidateIndex =
     0xFF;
 
 void WiFiService::Begin()
 {
+    ClearScoreHistory();
     ClearResults();
     state = WiFiScanState::Idle;
 
@@ -264,6 +273,26 @@ void WiFiService::ClearChannelAssessments()
     }
 }
 
+void WiFiService::ClearScoreHistory()
+{
+    scoreHistoryCount = 0;
+    scoreHistoryWriteIndex = 0;
+
+    for (uint8_t candidateIndex = 0;
+         candidateIndex < CandidateChannelCount;
+         ++candidateIndex)
+    {
+        for (uint8_t sampleIndex = 0;
+             sampleIndex < ScoreHistoryDepth;
+             ++sampleIndex)
+        {
+            candidateScoreHistory
+                [candidateIndex]
+                [sampleIndex] = 0;
+        }
+    }
+}
+
 void WiFiService::CopyResults(
     int16_t resultCount)
 {
@@ -449,6 +478,27 @@ void WiFiService::BuildChannelAssessments()
 {
     ClearChannelAssessments();
 
+    // A zero-network result should not be averaged with
+    // measurements from a previous RF environment.
+    if (networkCount == 0)
+    {
+        ClearScoreHistory();
+    }
+
+    for (uint8_t index = 0;
+         index < CandidateChannelCount;
+         ++index)
+    {
+        WiFiChannelAssessment &assessment =
+            candidateAssessments[index];
+
+        assessment.latestScore =
+            CalculateCongestionScore(
+                assessment.channel);
+    }
+
+    AddCurrentScoresToHistory();
+
     uint16_t bestScore = 0xFFFF;
     uint16_t secondBestScore = 0xFFFF;
 
@@ -460,8 +510,7 @@ void WiFiService::BuildChannelAssessments()
             candidateAssessments[index];
 
         assessment.congestionScore =
-            CalculateCongestionScore(
-                assessment.channel);
+            CalculateAverageScore(index);
 
         assessment.congestion =
             ClassifyCongestion(
@@ -532,6 +581,8 @@ void WiFiService::BuildChannelAssessments()
         scoreMargin;
     channelRecommendation.comparableCount =
         comparableCount;
+    channelRecommendation.historySampleCount =
+        scoreHistoryCount;
     channelRecommendation.unique =
         comparableCount == 1;
     channelRecommendation.confidence =
@@ -539,7 +590,59 @@ void WiFiService::BuildChannelAssessments()
             ? WiFiRecommendationConfidence::Unknown
             : ClassifyRecommendationConfidence(
                   comparableCount,
-                  scoreMargin);
+                  scoreMargin,
+                  scoreHistoryCount);
+}
+
+void WiFiService::AddCurrentScoresToHistory()
+{
+    for (uint8_t index = 0;
+         index < CandidateChannelCount;
+         ++index)
+    {
+        candidateScoreHistory
+            [index]
+            [scoreHistoryWriteIndex] =
+                candidateAssessments[index]
+                    .latestScore;
+    }
+
+    scoreHistoryWriteIndex =
+        static_cast<uint8_t>(
+            (scoreHistoryWriteIndex + 1) %
+            ScoreHistoryDepth);
+
+    if (scoreHistoryCount <
+        ScoreHistoryDepth)
+    {
+        ++scoreHistoryCount;
+    }
+}
+
+uint16_t WiFiService::CalculateAverageScore(
+    uint8_t candidateIndex)
+{
+    if (candidateIndex >=
+            CandidateChannelCount ||
+        scoreHistoryCount == 0)
+    {
+        return 0;
+    }
+
+    uint32_t total = 0;
+
+    for (uint8_t sampleIndex = 0;
+         sampleIndex < scoreHistoryCount;
+         ++sampleIndex)
+    {
+        total += candidateScoreHistory
+            [candidateIndex]
+            [sampleIndex];
+    }
+
+    return static_cast<uint16_t>(
+        (total + scoreHistoryCount / 2) /
+        scoreHistoryCount);
 }
 
 uint16_t WiFiService::CalculateCongestionScore(
@@ -740,15 +843,19 @@ WiFiCongestionLevel WiFiService::ClassifyCongestion(
 WiFiRecommendationConfidence
 WiFiService::ClassifyRecommendationConfidence(
     uint8_t comparableCount,
-    uint16_t scoreMargin)
+    uint16_t scoreMargin,
+    uint8_t historySampleCount)
 {
-    if (comparableCount > 1)
+    if (comparableCount > 1 ||
+        historySampleCount < 2)
     {
         return WiFiRecommendationConfidence::Low;
     }
 
-    if (scoreMargin >=
-        HighConfidenceMargin)
+    if (historySampleCount >=
+            ScoreHistoryDepth &&
+        scoreMargin >=
+            HighConfidenceMargin)
     {
         return WiFiRecommendationConfidence::High;
     }
@@ -835,11 +942,15 @@ void WiFiService::LogChannelRecommendation()
 
         Serial.printf(
             "WiFiService: Candidate CH %u - "
-            "score %u%s%s\n",
+            "latest %u, average %u over %u scan%s"
+            "%s%s\n",
             assessment.channel,
+            assessment.latestScore,
             assessment.congestionScore,
+            scoreHistoryCount,
+            scoreHistoryCount == 1 ? "" : "s",
             assessment.recommended
-                ? ", best observed"
+                ? ", best averaged"
                 : "",
             assessment.comparable &&
                     !assessment.recommended
@@ -856,9 +967,10 @@ void WiFiService::LogChannelRecommendation()
     }
 
     Serial.printf(
-        "WiFiService: Best observed CH %u, "
+        "WiFiService: Best averaged CH %u, "
         "score %u, margin %u, confidence %s, "
-        "%u comparable candidate%s\n",
+        "%u comparable candidate%s, "
+        "history %u/%u scans\n",
         channelRecommendation.bestChannel,
         channelRecommendation.bestScore,
         channelRecommendation.scoreMargin,
@@ -867,5 +979,7 @@ void WiFiService::LogChannelRecommendation()
         channelRecommendation.comparableCount,
         channelRecommendation.comparableCount == 1
             ? ""
-            : "s");
+            : "s",
+        channelRecommendation.historySampleCount,
+        ScoreHistoryDepth);
 }

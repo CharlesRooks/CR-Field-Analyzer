@@ -680,32 +680,38 @@ void ScanScreen::AddRecommendationRow(
 
         const size_t available =
             sizeof(channelText) - used;
+
         const size_t appended =
-            static_cast<size_t>(written) >= available
+            static_cast<size_t>(written) >=
+                    available
                 ? available - 1
                 : static_cast<size_t>(written);
+
         used += appended;
 
-        if (used >= sizeof(channelText) - 1)
+        if (used >=
+            sizeof(channelText) - 1)
         {
             break;
         }
     }
 
-    char rowText[160];
+    char rowText[192];
 
     if (recommendation.unique)
     {
         std::snprintf(
             rowText,
             sizeof(rowText),
-            "Recommended: Channel %u\n"
-            "Score %u   Margin %u   Confidence %s",
+            "Recommended: CH %u   Avg %u\n"
+            "Margin %u   Confidence %s   %u/%u scans",
             recommendation.bestChannel,
             recommendation.bestScore,
             recommendation.scoreMargin,
             RecommendationConfidenceToText(
-                recommendation.confidence));
+                recommendation.confidence),
+            recommendation.historySampleCount,
+            WiFiService::ScoreHistoryDepth);
     }
     else
     {
@@ -713,34 +719,72 @@ void ScanScreen::AddRecommendationRow(
             rowText,
             sizeof(rowText),
             "Comparable: %s\n"
-            "Best CH %u   Margin %u   Confidence %s",
+            "Best CH %u   Avg %u   Confidence %s   %u/%u",
             channelText[0] == '\0'
                 ? "None"
                 : channelText,
             recommendation.bestChannel,
-            recommendation.scoreMargin,
+            recommendation.bestScore,
             RecommendationConfidenceToText(
-                recommendation.confidence));
+                recommendation.confidence),
+            recommendation.historySampleCount,
+            WiFiService::ScoreHistoryDepth);
     }
 
     lv_obj_t *label =
         lv_label_create(networkList);
-    lv_label_set_text(label, rowText);
-    lv_label_set_recolor(label, true);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(label, lv_pct(100));
-    lv_obj_set_style_text_color(label, Theme::Accent(), 0);
-    lv_obj_set_style_pad_all(label, 6, 0);
-    lv_obj_set_style_border_width(label, 1, 0);
-    lv_obj_set_style_border_color(label, Theme::Accent(), 0);
-    lv_obj_set_style_border_opa(label, LV_OPA_70, 0);
-    lv_obj_set_style_radius(label, 4, 0);
+
+    lv_label_set_text(
+        label,
+        rowText);
+
+    lv_label_set_recolor(
+        label,
+        true);
+
+    lv_label_set_long_mode(
+        label,
+        LV_LABEL_LONG_WRAP);
+
+    lv_obj_set_width(
+        label,
+        lv_pct(100));
+
+    lv_obj_set_style_text_color(
+        label,
+        Theme::Accent(),
+        0);
+
+    lv_obj_set_style_pad_all(
+        label,
+        6,
+        0);
+
+    lv_obj_set_style_border_width(
+        label,
+        1,
+        0);
+
+    lv_obj_set_style_border_color(
+        label,
+        Theme::Accent(),
+        0);
+
+    lv_obj_set_style_border_opa(
+        label,
+        LV_OPA_70,
+        0);
+
+    lv_obj_set_style_radius(
+        label,
+        4,
+        0);
 }
 
 void ScanScreen::AddCandidateAssessmentRow(
     const WiFiChannelAssessment &assessment)
 {
-    char rowText[112];
+    char rowText[144];
 
     const char *marker =
         assessment.recommended
@@ -752,9 +796,10 @@ void ScanScreen::AddCandidateAssessmentRow(
     std::snprintf(
         rowText,
         sizeof(rowText),
-        "CH %u   Score %u   %s%s%s",
+        "CH %u   Avg %u   Now %u   %s%s%s",
         assessment.channel,
         assessment.congestionScore,
+        assessment.latestScore,
         CongestionLevelToText(
             assessment.congestion),
         marker[0] == '\0' ? "" : "   ",
@@ -762,11 +807,32 @@ void ScanScreen::AddCandidateAssessmentRow(
 
     lv_obj_t *label =
         lv_label_create(networkList);
-    lv_label_set_text(label, rowText);
-    lv_label_set_recolor(label, true);
-    lv_obj_set_width(label, lv_pct(100));
-    lv_obj_set_style_text_color(label, Theme::Text(), 0);
-    lv_obj_set_style_pad_bottom(label, 4, 0);
+
+    lv_label_set_text(
+        label,
+        rowText);
+
+    lv_label_set_recolor(
+        label,
+        true);
+
+    lv_label_set_long_mode(
+        label,
+        LV_LABEL_LONG_WRAP);
+
+    lv_obj_set_width(
+        label,
+        lv_pct(100));
+
+    lv_obj_set_style_text_color(
+        label,
+        Theme::Text(),
+        0);
+
+    lv_obj_set_style_pad_bottom(
+        label,
+        4,
+        0);
 }
 
 void ScanScreen::AddChannelRow(

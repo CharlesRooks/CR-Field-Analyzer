@@ -82,6 +82,12 @@ struct WiFiChannelInfo
 struct WiFiChannelAssessment
 {
     uint8_t channel = 0;
+
+    // Score from the most recently completed scan.
+    uint16_t latestScore = 0;
+
+    // Rolling average used for congestion classification
+    // and recommendation decisions.
     uint16_t congestionScore = 0;
 
     WiFiCongestionLevel congestion =
@@ -100,6 +106,7 @@ struct WiFiChannelRecommendation
     uint16_t scoreMargin = 0;
 
     uint8_t comparableCount = 0;
+    uint8_t historySampleCount = 0;
 
     WiFiRecommendationConfidence confidence =
         WiFiRecommendationConfidence::Unknown;

@@ -11,6 +11,10 @@ public:
     static constexpr uint8_t Max2_4GHzChannel = 14;
     static constexpr uint8_t CandidateChannelCount = 3;
 
+    // Recommendation decisions use a rolling history
+    // of the most recent completed scans.
+    static constexpr uint8_t ScoreHistoryDepth = 3;
+
     // Candidate scores within this many points of the
     // best observed score are treated as comparable.
     static constexpr uint16_t
@@ -67,16 +71,30 @@ private:
     static WiFiChannelRecommendation
         channelRecommendation;
 
+    static uint16_t
+        candidateScoreHistory
+            [CandidateChannelCount]
+            [ScoreHistoryDepth];
+
+    static uint8_t scoreHistoryCount;
+    static uint8_t scoreHistoryWriteIndex;
+
     static uint8_t recommendedCandidateIndex;
 
     static void ClearResults();
     static void ClearChannelStatistics();
     static void ClearChannelAssessments();
+    static void ClearScoreHistory();
 
     static void CopyResults(int16_t resultCount);
     static void SortResultsBySignal();
     static void BuildChannelStatistics();
     static void BuildChannelAssessments();
+
+    static void AddCurrentScoresToHistory();
+
+    static uint16_t CalculateAverageScore(
+        uint8_t candidateIndex);
 
     static uint16_t CalculateCongestionScore(
         uint8_t candidateChannel);
@@ -100,7 +118,8 @@ private:
     static WiFiRecommendationConfidence
         ClassifyRecommendationConfidence(
             uint8_t comparableCount,
-            uint16_t scoreMargin);
+            uint16_t scoreMargin,
+            uint8_t historySampleCount);
 
     static const char *ConfidenceToText(
         WiFiRecommendationConfidence confidence);
