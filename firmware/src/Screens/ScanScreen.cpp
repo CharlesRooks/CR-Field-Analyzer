@@ -482,6 +482,32 @@ void ScanScreen::ShowNetworkResults(
 
 void ScanScreen::ShowChannelResults()
 {
+    const WiFiChannelAssessment *recommended =
+        WiFiService::GetRecommendedChannel();
+
+    if (recommended != nullptr)
+    {
+        AddRecommendationRow(*recommended);
+    }
+
+    for (uint8_t index = 0;
+         index <
+             WiFiService::CandidateChannelCount;
+         ++index)
+    {
+        const WiFiChannelAssessment *assessment =
+            WiFiService::GetCandidateAssessment(
+                index);
+
+        if (assessment == nullptr)
+        {
+            continue;
+        }
+
+        AddCandidateAssessmentRow(
+            *assessment);
+    }
+
     const uint8_t occupiedChannels =
         WiFiService::GetOccupiedChannelCount();
 
@@ -618,6 +644,111 @@ void ScanScreen::AddNetworkRow(
         0);
 }
 
+void ScanScreen::AddRecommendationRow(
+    const WiFiChannelAssessment &assessment)
+{
+    char rowText[128];
+
+    std::snprintf(
+        rowText,
+        sizeof(rowText),
+        "Recommended: Channel %u\n"
+        "Score %u   %s",
+        assessment.channel,
+        assessment.congestionScore,
+        CongestionLevelToText(
+            assessment.congestion));
+
+    lv_obj_t *label =
+        lv_label_create(networkList);
+
+    lv_label_set_text(
+        label,
+        rowText);
+
+    lv_label_set_recolor(
+        label,
+        true);
+
+    lv_label_set_long_mode(
+        label,
+        LV_LABEL_LONG_WRAP);
+
+    lv_obj_set_width(
+        label,
+        lv_pct(100));
+
+    lv_obj_set_style_text_color(
+        label,
+        Theme::Accent(),
+        0);
+
+    lv_obj_set_style_pad_all(
+        label,
+        6,
+        0);
+
+    lv_obj_set_style_border_width(
+        label,
+        1,
+        0);
+
+    lv_obj_set_style_border_color(
+        label,
+        Theme::Accent(),
+        0);
+
+    lv_obj_set_style_border_opa(
+        label,
+        LV_OPA_70,
+        0);
+
+    lv_obj_set_style_radius(
+        label,
+        4,
+        0);
+}
+
+void ScanScreen::AddCandidateAssessmentRow(
+    const WiFiChannelAssessment &assessment)
+{
+    char rowText[96];
+
+    std::snprintf(
+        rowText,
+        sizeof(rowText),
+        "CH %u   Score %u   %s",
+        assessment.channel,
+        assessment.congestionScore,
+        CongestionLevelToText(
+            assessment.congestion));
+
+    lv_obj_t *label =
+        lv_label_create(networkList);
+
+    lv_label_set_text(
+        label,
+        rowText);
+
+    lv_label_set_recolor(
+        label,
+        true);
+
+    lv_obj_set_width(
+        label,
+        lv_pct(100));
+
+    lv_obj_set_style_text_color(
+        label,
+        Theme::Text(),
+        0);
+
+    lv_obj_set_style_pad_bottom(
+        label,
+        4,
+        0);
+}
+
 void ScanScreen::AddChannelRow(
     const WiFiChannelInfo &channelInfo)
 {
@@ -703,6 +834,29 @@ const char *ScanScreen::SignalQualityToText(
             return "#FF5252 Poor#";
 
         case WiFiSignalQuality::Unknown:
+        default:
+            return "#9E9E9E Unknown#";
+    }
+}
+
+const char *ScanScreen::CongestionLevelToText(
+    WiFiCongestionLevel congestion)
+{
+    switch (congestion)
+    {
+        case WiFiCongestionLevel::Excellent:
+            return "#00E676 Excellent#";
+
+        case WiFiCongestionLevel::Good:
+            return "#FFD740 Good#";
+
+        case WiFiCongestionLevel::Fair:
+            return "#FF9800 Fair#";
+
+        case WiFiCongestionLevel::Poor:
+            return "#FF5252 Poor#";
+
+        case WiFiCongestionLevel::Unknown:
         default:
             return "#9E9E9E Unknown#";
     }

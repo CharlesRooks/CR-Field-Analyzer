@@ -19,6 +19,15 @@ enum class WiFiSignalQuality : uint8_t
     Excellent
 };
 
+enum class WiFiCongestionLevel : uint8_t
+{
+    Unknown = 0,
+    Poor,
+    Fair,
+    Good,
+    Excellent
+};
+
 enum class WiFiSecurity : uint8_t
 {
     Unknown = 0,
@@ -44,9 +53,11 @@ struct WiFiNetworkInfo
     int32_t rssi = -127;
     uint8_t channel = 0;
 
-    WiFiSignalQuality signalQuality = WiFiSignalQuality::Unknown;
+    WiFiSignalQuality signalQuality =
+        WiFiSignalQuality::Unknown;
 
-    WiFiSecurity security = WiFiSecurity::Unknown;
+    WiFiSecurity security =
+        WiFiSecurity::Unknown;
 
     bool hidden = false;
 };
@@ -58,4 +69,15 @@ struct WiFiChannelInfo
 
     int32_t strongestRssi = -127;
     int32_t averageRssi = -127;
+};
+
+struct WiFiChannelAssessment
+{
+    uint8_t channel = 0;
+    uint16_t congestionScore = 0;
+
+    WiFiCongestionLevel congestion =
+        WiFiCongestionLevel::Unknown;
+
+    bool recommended = false;
 };

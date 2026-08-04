@@ -73,11 +73,20 @@ private:
     void AddNetworkRow(
         const WiFiNetworkInfo &network);
 
+    void AddRecommendationRow(
+        const WiFiChannelAssessment &assessment);
+
+    void AddCandidateAssessmentRow(
+        const WiFiChannelAssessment &assessment);
+
     void AddChannelRow(
         const WiFiChannelInfo &channelInfo);
 
     static const char *SignalQualityToText(
         WiFiSignalQuality quality);
+
+    static const char *CongestionLevelToText(
+        WiFiCongestionLevel congestion);
 
     static const char *SecurityToText(
         WiFiSecurity security);

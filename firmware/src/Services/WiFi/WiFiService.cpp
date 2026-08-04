@@ -20,6 +20,13 @@ WiFiChannelInfo
 
 uint8_t WiFiService::occupiedChannelCount = 0;
 
+WiFiChannelAssessment
+    WiFiService::candidateAssessments[
+        WiFiService::CandidateChannelCount];
+
+uint8_t WiFiService::recommendedCandidateIndex =
+    0xFF;
+
 void WiFiService::Begin()
 {
     ClearResults();
@@ -120,6 +127,7 @@ void WiFiService::Update()
         networkCount);
 
     LogChannelStatistics();
+    LogChannelRecommendation();
 }
 
 WiFiScanState WiFiService::GetState()
@@ -160,6 +168,33 @@ const WiFiChannelInfo *WiFiService::GetChannelInfo(
     return &channelInfo[channel];
 }
 
+const WiFiChannelAssessment *
+WiFiService::GetCandidateAssessment(
+    uint8_t index)
+{
+    if (index >= CandidateChannelCount)
+    {
+        return nullptr;
+    }
+
+    return &candidateAssessments[index];
+}
+
+const WiFiChannelAssessment *
+WiFiService::GetRecommendedChannel()
+{
+    if (recommendedCandidateIndex ==
+            InvalidCandidateIndex ||
+        recommendedCandidateIndex >=
+            CandidateChannelCount)
+    {
+        return nullptr;
+    }
+
+    return &candidateAssessments[
+        recommendedCandidateIndex];
+}
+
 void WiFiService::ClearResults()
 {
     networkCount = 0;
@@ -172,6 +207,7 @@ void WiFiService::ClearResults()
     }
 
     ClearChannelStatistics();
+    ClearChannelAssessments();
 }
 
 void WiFiService::ClearChannelStatistics()
@@ -190,6 +226,32 @@ void WiFiService::ClearChannelStatistics()
     }
 }
 
+void WiFiService::ClearChannelAssessments()
+{
+    static constexpr uint8_t
+        candidateChannels[
+            CandidateChannelCount] =
+        {
+            1,
+            6,
+            11
+        };
+
+    recommendedCandidateIndex =
+        InvalidCandidateIndex;
+
+    for (uint8_t index = 0;
+         index < CandidateChannelCount;
+         ++index)
+    {
+        candidateAssessments[index] =
+            WiFiChannelAssessment{};
+
+        candidateAssessments[index].channel =
+            candidateChannels[index];
+    }
+}
+
 void WiFiService::CopyResults(
     int16_t resultCount)
 {
@@ -197,6 +259,7 @@ void WiFiService::CopyResults(
 
     if (resultCount <= 0)
     {
+        BuildChannelAssessments();
         return;
     }
 
@@ -265,9 +328,44 @@ void WiFiService::CopyResults(
             ssid.length() == 0;
 
         ++networkCount;
+    }
 
-        SortResultsBySignal();
-        BuildChannelStatistics();
+    // Perform aggregate work once after all scan results
+    // have been copied into the fixed cache.
+    SortResultsBySignal();
+    BuildChannelStatistics();
+    BuildChannelAssessments();
+}
+
+void WiFiService::SortResultsBySignal()
+{
+    if (networkCount < 2)
+    {
+        return;
+    }
+
+    for (uint8_t index = 1;
+         index < networkCount;
+         ++index)
+    {
+        const WiFiNetworkInfo current =
+            networks[index];
+
+        int16_t compareIndex =
+            static_cast<int16_t>(index) - 1;
+
+        while (compareIndex >= 0 &&
+               networks[compareIndex].rssi <
+                   current.rssi)
+        {
+            networks[compareIndex + 1] =
+                networks[compareIndex];
+
+            --compareIndex;
+        }
+
+        networks[compareIndex + 1] =
+            current;
     }
 }
 
@@ -335,6 +433,165 @@ void WiFiService::BuildChannelStatistics()
     }
 }
 
+void WiFiService::BuildChannelAssessments()
+{
+    ClearChannelAssessments();
+
+    uint16_t bestScore = 0xFFFF;
+
+    for (uint8_t index = 0;
+         index < CandidateChannelCount;
+         ++index)
+    {
+        WiFiChannelAssessment &assessment =
+            candidateAssessments[index];
+
+        assessment.congestionScore =
+            CalculateCongestionScore(
+                assessment.channel);
+
+        assessment.congestion =
+            ClassifyCongestion(
+                assessment.congestionScore);
+
+        if (recommendedCandidateIndex ==
+                InvalidCandidateIndex ||
+            assessment.congestionScore <
+                bestScore)
+        {
+            bestScore =
+                assessment.congestionScore;
+
+            recommendedCandidateIndex =
+                index;
+        }
+    }
+
+    if (recommendedCandidateIndex !=
+            InvalidCandidateIndex)
+    {
+        candidateAssessments[
+            recommendedCandidateIndex]
+                .recommended = true;
+    }
+}
+
+uint16_t WiFiService::CalculateCongestionScore(
+    uint8_t candidateChannel)
+{
+    uint32_t score = 0;
+
+    for (uint8_t index = 0;
+         index < networkCount;
+         ++index)
+    {
+        const WiFiNetworkInfo &network =
+            networks[index];
+
+        if (network.channel == 0 ||
+            network.channel >
+                Max2_4GHzChannel)
+        {
+            continue;
+        }
+
+        const uint8_t overlapWeight =
+            CalculateOverlapWeight(
+                candidateChannel,
+                network.channel);
+
+        if (overlapWeight == 0)
+        {
+            continue;
+        }
+
+        const uint8_t signalImpact =
+            CalculateSignalImpact(
+                network.rssi);
+
+        const uint16_t contribution =
+            static_cast<uint16_t>(
+                (static_cast<uint16_t>(
+                    signalImpact) *
+                 overlapWeight +
+                 50) /
+                100);
+
+        score += contribution;
+    }
+
+    if (score > 0xFFFF)
+    {
+        return 0xFFFF;
+    }
+
+    return static_cast<uint16_t>(score);
+}
+
+uint8_t WiFiService::CalculateSignalImpact(
+    int32_t rssi)
+{
+    if (rssi >= -50)
+    {
+        return 100;
+    }
+
+    if (rssi >= -60)
+    {
+        return 85;
+    }
+
+    if (rssi >= -70)
+    {
+        return 65;
+    }
+
+    if (rssi >= -80)
+    {
+        return 40;
+    }
+
+    if (rssi >= -90)
+    {
+        return 20;
+    }
+
+    return 8;
+}
+
+uint8_t WiFiService::CalculateOverlapWeight(
+    uint8_t candidateChannel,
+    uint8_t networkChannel)
+{
+    const uint8_t distance =
+        candidateChannel > networkChannel
+            ? candidateChannel -
+                networkChannel
+            : networkChannel -
+                candidateChannel;
+
+    switch (distance)
+    {
+        case 0:
+            return 100;
+
+        case 1:
+            return 80;
+
+        case 2:
+            return 55;
+
+        case 3:
+            return 30;
+
+        case 4:
+            return 10;
+
+        default:
+            return 0;
+    }
+}
+
 WiFiSecurity WiFiService::MapSecurity(
     uint8_t encryptionType)
 {
@@ -372,57 +629,6 @@ WiFiSecurity WiFiService::MapSecurity(
     }
 }
 
-void WiFiService::PublishScanStarted()
-{
-    Message message{};
-    message.type = MessageType::WiFiScanStarted;
-    message.timestampMs = millis();
-
-    MessageBus::Publish(message);
-}
-
-void WiFiService::PublishScanCompleted()
-{
-    Message message{};
-    message.type = MessageType::WiFiScanCompleted;
-    message.timestampMs = millis();
-    message.wifiNetworkCount = networkCount;
-
-    MessageBus::Publish(message);
-}
-
-void WiFiService::SortResultsBySignal()
-{
-    if (networkCount < 2)
-    {
-        return;
-    }
-
-    for (uint8_t index = 1;
-         index < networkCount;
-         ++index)
-    {
-        const WiFiNetworkInfo current =
-            networks[index];
-
-        int16_t compareIndex =
-            static_cast<int16_t>(index) - 1;
-
-        while (compareIndex >= 0 &&
-               networks[compareIndex].rssi <
-                   current.rssi)
-        {
-            networks[compareIndex + 1] =
-                networks[compareIndex];
-
-            --compareIndex;
-        }
-
-        networks[compareIndex + 1] =
-            current;
-    }
-}
-
 WiFiSignalQuality WiFiService::ClassifySignal(
     int32_t rssi)
 {
@@ -442,6 +648,46 @@ WiFiSignalQuality WiFiService::ClassifySignal(
     }
 
     return WiFiSignalQuality::Poor;
+}
+
+WiFiCongestionLevel WiFiService::ClassifyCongestion(
+    uint16_t score)
+{
+    if (score <= 60)
+    {
+        return WiFiCongestionLevel::Excellent;
+    }
+
+    if (score <= 140)
+    {
+        return WiFiCongestionLevel::Good;
+    }
+
+    if (score <= 240)
+    {
+        return WiFiCongestionLevel::Fair;
+    }
+
+    return WiFiCongestionLevel::Poor;
+}
+
+void WiFiService::PublishScanStarted()
+{
+    Message message{};
+    message.type = MessageType::WiFiScanStarted;
+    message.timestampMs = millis();
+
+    MessageBus::Publish(message);
+}
+
+void WiFiService::PublishScanCompleted()
+{
+    Message message{};
+    message.type = MessageType::WiFiScanCompleted;
+    message.timestampMs = millis();
+    message.wifiNetworkCount = networkCount;
+
+    MessageBus::Publish(message);
 }
 
 void WiFiService::LogChannelStatistics()
@@ -474,4 +720,37 @@ void WiFiService::LogChannelStatistics()
             static_cast<long>(
                 info.averageRssi));
     }
+}
+
+void WiFiService::LogChannelRecommendation()
+{
+    for (uint8_t index = 0;
+         index < CandidateChannelCount;
+         ++index)
+    {
+        const WiFiChannelAssessment &assessment =
+            candidateAssessments[index];
+
+        Serial.printf(
+            "WiFiService: Candidate CH %u - "
+            "congestion score %u\n",
+            assessment.channel,
+            assessment.congestionScore);
+    }
+
+    const WiFiChannelAssessment *recommended =
+        GetRecommendedChannel();
+
+    if (recommended == nullptr)
+    {
+        Serial.println(
+            "WiFiService: No channel recommendation");
+        return;
+    }
+
+    Serial.printf(
+        "WiFiService: Recommended CH %u "
+        "with score %u\n",
+        recommended->channel,
+        recommended->congestionScore);
 }
