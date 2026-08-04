@@ -11,6 +11,16 @@ public:
     static constexpr uint8_t Max2_4GHzChannel = 14;
     static constexpr uint8_t CandidateChannelCount = 3;
 
+    // Candidate scores within this many points of the
+    // best observed score are treated as comparable.
+    static constexpr uint16_t
+        ComparableScoreTolerance = 15;
+
+    // A unique winner needs at least this margin over
+    // the second-best score for High confidence.
+    static constexpr uint16_t
+        HighConfidenceMargin = 40;
+
     static void Begin();
     static void Update();
 
@@ -34,6 +44,9 @@ public:
     static const WiFiChannelAssessment *
         GetRecommendedChannel();
 
+    static const WiFiChannelRecommendation &
+        GetChannelRecommendation();
+
 private:
     static constexpr uint8_t
         InvalidCandidateIndex = 0xFF;
@@ -50,6 +63,9 @@ private:
 
     static WiFiChannelAssessment
         candidateAssessments[CandidateChannelCount];
+
+    static WiFiChannelRecommendation
+        channelRecommendation;
 
     static uint8_t recommendedCandidateIndex;
 
@@ -80,6 +96,14 @@ private:
 
     static WiFiCongestionLevel ClassifyCongestion(
         uint16_t score);
+
+    static WiFiRecommendationConfidence
+        ClassifyRecommendationConfidence(
+            uint8_t comparableCount,
+            uint16_t scoreMargin);
+
+    static const char *ConfidenceToText(
+        WiFiRecommendationConfidence confidence);
 
     static void PublishScanStarted();
     static void PublishScanCompleted();

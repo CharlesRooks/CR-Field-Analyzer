@@ -74,7 +74,8 @@ private:
         const WiFiNetworkInfo &network);
 
     void AddRecommendationRow(
-        const WiFiChannelAssessment &assessment);
+        const WiFiChannelRecommendation
+            &recommendation);
 
     void AddCandidateAssessmentRow(
         const WiFiChannelAssessment &assessment);
@@ -87,6 +88,9 @@ private:
 
     static const char *CongestionLevelToText(
         WiFiCongestionLevel congestion);
+
+    static const char *RecommendationConfidenceToText(
+        WiFiRecommendationConfidence confidence);
 
     static const char *SecurityToText(
         WiFiSecurity security);

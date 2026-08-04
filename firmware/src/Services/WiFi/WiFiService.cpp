@@ -24,6 +24,9 @@ WiFiChannelAssessment
     WiFiService::candidateAssessments[
         WiFiService::CandidateChannelCount];
 
+WiFiChannelRecommendation
+    WiFiService::channelRecommendation{};
+
 uint8_t WiFiService::recommendedCandidateIndex =
     0xFF;
 
@@ -195,6 +198,12 @@ WiFiService::GetRecommendedChannel()
         recommendedCandidateIndex];
 }
 
+const WiFiChannelRecommendation &
+WiFiService::GetChannelRecommendation()
+{
+    return channelRecommendation;
+}
+
 void WiFiService::ClearResults()
 {
     networkCount = 0;
@@ -239,6 +248,9 @@ void WiFiService::ClearChannelAssessments()
 
     recommendedCandidateIndex =
         InvalidCandidateIndex;
+
+    channelRecommendation =
+        WiFiChannelRecommendation{};
 
     for (uint8_t index = 0;
          index < CandidateChannelCount;
@@ -438,6 +450,7 @@ void WiFiService::BuildChannelAssessments()
     ClearChannelAssessments();
 
     uint16_t bestScore = 0xFFFF;
+    uint16_t secondBestScore = 0xFFFF;
 
     for (uint8_t index = 0;
          index < CandidateChannelCount;
@@ -454,26 +467,79 @@ void WiFiService::BuildChannelAssessments()
             ClassifyCongestion(
                 assessment.congestionScore);
 
-        if (recommendedCandidateIndex ==
-                InvalidCandidateIndex ||
-            assessment.congestionScore <
-                bestScore)
+        if (assessment.congestionScore <
+            bestScore)
         {
+            secondBestScore = bestScore;
             bestScore =
                 assessment.congestionScore;
-
             recommendedCandidateIndex =
                 index;
         }
+        else if (assessment.congestionScore <
+                 secondBestScore)
+        {
+            secondBestScore =
+                assessment.congestionScore;
+        }
     }
 
-    if (recommendedCandidateIndex !=
+    if (recommendedCandidateIndex ==
             InvalidCandidateIndex)
     {
-        candidateAssessments[
-            recommendedCandidateIndex]
-                .recommended = true;
+        return;
     }
+
+    WiFiChannelAssessment &bestAssessment =
+        candidateAssessments[
+            recommendedCandidateIndex];
+
+    bestAssessment.recommended = true;
+
+    uint8_t comparableCount = 0;
+
+    for (uint8_t index = 0;
+         index < CandidateChannelCount;
+         ++index)
+    {
+        WiFiChannelAssessment &assessment =
+            candidateAssessments[index];
+
+        const uint32_t comparableLimit =
+            static_cast<uint32_t>(bestScore) +
+            ComparableScoreTolerance;
+
+        if (assessment.congestionScore <=
+            comparableLimit)
+        {
+            assessment.comparable = true;
+            ++comparableCount;
+        }
+    }
+
+    const uint16_t scoreMargin =
+        secondBestScore >= bestScore
+            ? secondBestScore - bestScore
+            : 0;
+
+    channelRecommendation.bestChannel =
+        bestAssessment.channel;
+    channelRecommendation.bestScore =
+        bestScore;
+    channelRecommendation.secondBestScore =
+        secondBestScore;
+    channelRecommendation.scoreMargin =
+        scoreMargin;
+    channelRecommendation.comparableCount =
+        comparableCount;
+    channelRecommendation.unique =
+        comparableCount == 1;
+    channelRecommendation.confidence =
+        networkCount == 0
+            ? WiFiRecommendationConfidence::Unknown
+            : ClassifyRecommendationConfidence(
+                  comparableCount,
+                  scoreMargin);
 }
 
 uint16_t WiFiService::CalculateCongestionScore(
@@ -671,6 +737,42 @@ WiFiCongestionLevel WiFiService::ClassifyCongestion(
     return WiFiCongestionLevel::Poor;
 }
 
+WiFiRecommendationConfidence
+WiFiService::ClassifyRecommendationConfidence(
+    uint8_t comparableCount,
+    uint16_t scoreMargin)
+{
+    if (comparableCount > 1)
+    {
+        return WiFiRecommendationConfidence::Low;
+    }
+
+    if (scoreMargin >=
+        HighConfidenceMargin)
+    {
+        return WiFiRecommendationConfidence::High;
+    }
+
+    return WiFiRecommendationConfidence::Medium;
+}
+
+const char *WiFiService::ConfidenceToText(
+    WiFiRecommendationConfidence confidence)
+{
+    switch (confidence)
+    {
+        case WiFiRecommendationConfidence::High:
+            return "High";
+        case WiFiRecommendationConfidence::Medium:
+            return "Medium";
+        case WiFiRecommendationConfidence::Low:
+            return "Low";
+        case WiFiRecommendationConfidence::Unknown:
+        default:
+            return "Unknown";
+    }
+}
+
 void WiFiService::PublishScanStarted()
 {
     Message message{};
@@ -733,15 +835,20 @@ void WiFiService::LogChannelRecommendation()
 
         Serial.printf(
             "WiFiService: Candidate CH %u - "
-            "congestion score %u\n",
+            "score %u%s%s\n",
             assessment.channel,
-            assessment.congestionScore);
+            assessment.congestionScore,
+            assessment.recommended
+                ? ", best observed"
+                : "",
+            assessment.comparable &&
+                    !assessment.recommended
+                ? ", comparable"
+                : "");
     }
 
-    const WiFiChannelAssessment *recommended =
-        GetRecommendedChannel();
-
-    if (recommended == nullptr)
+    if (recommendedCandidateIndex ==
+        InvalidCandidateIndex)
     {
         Serial.println(
             "WiFiService: No channel recommendation");
@@ -749,8 +856,16 @@ void WiFiService::LogChannelRecommendation()
     }
 
     Serial.printf(
-        "WiFiService: Recommended CH %u "
-        "with score %u\n",
-        recommended->channel,
-        recommended->congestionScore);
+        "WiFiService: Best observed CH %u, "
+        "score %u, margin %u, confidence %s, "
+        "%u comparable candidate%s\n",
+        channelRecommendation.bestChannel,
+        channelRecommendation.bestScore,
+        channelRecommendation.scoreMargin,
+        ConfidenceToText(
+            channelRecommendation.confidence),
+        channelRecommendation.comparableCount,
+        channelRecommendation.comparableCount == 1
+            ? ""
+            : "s");
 }

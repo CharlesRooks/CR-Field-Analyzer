@@ -28,6 +28,14 @@ enum class WiFiCongestionLevel : uint8_t
     Excellent
 };
 
+enum class WiFiRecommendationConfidence : uint8_t
+{
+    Unknown = 0,
+    Low,
+    Medium,
+    High
+};
+
 enum class WiFiSecurity : uint8_t
 {
     Unknown = 0,
@@ -80,4 +88,21 @@ struct WiFiChannelAssessment
         WiFiCongestionLevel::Unknown;
 
     bool recommended = false;
+    bool comparable = false;
+};
+
+struct WiFiChannelRecommendation
+{
+    uint8_t bestChannel = 0;
+
+    uint16_t bestScore = 0;
+    uint16_t secondBestScore = 0;
+    uint16_t scoreMargin = 0;
+
+    uint8_t comparableCount = 0;
+
+    WiFiRecommendationConfidence confidence =
+        WiFiRecommendationConfidence::Unknown;
+
+    bool unique = false;
 };

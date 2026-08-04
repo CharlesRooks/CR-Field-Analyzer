@@ -482,13 +482,12 @@ void ScanScreen::ShowNetworkResults(
 
 void ScanScreen::ShowChannelResults()
 {
-    const WiFiChannelAssessment *recommended =
-        WiFiService::GetRecommendedChannel();
+    const WiFiChannelRecommendation
+        &recommendation =
+            WiFiService::GetChannelRecommendation();
 
-    if (recommended != nullptr)
-    {
-        AddRecommendationRow(*recommended);
-    }
+    AddRecommendationRow(
+        recommendation);
 
     for (uint8_t index = 0;
          index <
@@ -515,7 +514,6 @@ void ScanScreen::ShowChannelResults()
     {
         AddMessageRow(
             "No occupied Wi-Fi channels were found.");
-
         return;
     }
 
@@ -645,108 +643,130 @@ void ScanScreen::AddNetworkRow(
 }
 
 void ScanScreen::AddRecommendationRow(
-    const WiFiChannelAssessment &assessment)
+    const WiFiChannelRecommendation
+        &recommendation)
 {
-    char rowText[128];
+    char channelText[48] = {};
+    size_t used = 0;
 
-    std::snprintf(
-        rowText,
-        sizeof(rowText),
-        "Recommended: Channel %u\n"
-        "Score %u   %s",
-        assessment.channel,
-        assessment.congestionScore,
-        CongestionLevelToText(
-            assessment.congestion));
+    for (uint8_t index = 0;
+         index <
+             WiFiService::CandidateChannelCount;
+         ++index)
+    {
+        const WiFiChannelAssessment *assessment =
+            WiFiService::GetCandidateAssessment(
+                index);
+
+        if (assessment == nullptr ||
+            !assessment->comparable)
+        {
+            continue;
+        }
+
+        const int written =
+            std::snprintf(
+                channelText + used,
+                sizeof(channelText) - used,
+                used == 0
+                    ? "CH %u"
+                    : " / CH %u",
+                assessment->channel);
+
+        if (written <= 0)
+        {
+            continue;
+        }
+
+        const size_t available =
+            sizeof(channelText) - used;
+        const size_t appended =
+            static_cast<size_t>(written) >= available
+                ? available - 1
+                : static_cast<size_t>(written);
+        used += appended;
+
+        if (used >= sizeof(channelText) - 1)
+        {
+            break;
+        }
+    }
+
+    char rowText[160];
+
+    if (recommendation.unique)
+    {
+        std::snprintf(
+            rowText,
+            sizeof(rowText),
+            "Recommended: Channel %u\n"
+            "Score %u   Margin %u   Confidence %s",
+            recommendation.bestChannel,
+            recommendation.bestScore,
+            recommendation.scoreMargin,
+            RecommendationConfidenceToText(
+                recommendation.confidence));
+    }
+    else
+    {
+        std::snprintf(
+            rowText,
+            sizeof(rowText),
+            "Comparable: %s\n"
+            "Best CH %u   Margin %u   Confidence %s",
+            channelText[0] == '\0'
+                ? "None"
+                : channelText,
+            recommendation.bestChannel,
+            recommendation.scoreMargin,
+            RecommendationConfidenceToText(
+                recommendation.confidence));
+    }
 
     lv_obj_t *label =
         lv_label_create(networkList);
-
-    lv_label_set_text(
-        label,
-        rowText);
-
-    lv_label_set_recolor(
-        label,
-        true);
-
-    lv_label_set_long_mode(
-        label,
-        LV_LABEL_LONG_WRAP);
-
-    lv_obj_set_width(
-        label,
-        lv_pct(100));
-
-    lv_obj_set_style_text_color(
-        label,
-        Theme::Accent(),
-        0);
-
-    lv_obj_set_style_pad_all(
-        label,
-        6,
-        0);
-
-    lv_obj_set_style_border_width(
-        label,
-        1,
-        0);
-
-    lv_obj_set_style_border_color(
-        label,
-        Theme::Accent(),
-        0);
-
-    lv_obj_set_style_border_opa(
-        label,
-        LV_OPA_70,
-        0);
-
-    lv_obj_set_style_radius(
-        label,
-        4,
-        0);
+    lv_label_set_text(label, rowText);
+    lv_label_set_recolor(label, true);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(label, lv_pct(100));
+    lv_obj_set_style_text_color(label, Theme::Accent(), 0);
+    lv_obj_set_style_pad_all(label, 6, 0);
+    lv_obj_set_style_border_width(label, 1, 0);
+    lv_obj_set_style_border_color(label, Theme::Accent(), 0);
+    lv_obj_set_style_border_opa(label, LV_OPA_70, 0);
+    lv_obj_set_style_radius(label, 4, 0);
 }
 
 void ScanScreen::AddCandidateAssessmentRow(
     const WiFiChannelAssessment &assessment)
 {
-    char rowText[96];
+    char rowText[112];
+
+    const char *marker =
+        assessment.recommended
+            ? "BEST"
+            : assessment.comparable
+                ? "ALT"
+                : "";
 
     std::snprintf(
         rowText,
         sizeof(rowText),
-        "CH %u   Score %u   %s",
+        "CH %u   Score %u   %s%s%s",
         assessment.channel,
         assessment.congestionScore,
         CongestionLevelToText(
-            assessment.congestion));
+            assessment.congestion),
+        marker[0] == '\0' ? "" : "   ",
+        marker);
 
     lv_obj_t *label =
         lv_label_create(networkList);
-
-    lv_label_set_text(
-        label,
-        rowText);
-
-    lv_label_set_recolor(
-        label,
-        true);
-
-    lv_obj_set_width(
-        label,
-        lv_pct(100));
-
-    lv_obj_set_style_text_color(
-        label,
-        Theme::Text(),
-        0);
-
-    lv_obj_set_style_pad_bottom(
-        label,
-        4,
-        0);
+    lv_label_set_text(label, rowText);
+    lv_label_set_recolor(label, true);
+    lv_obj_set_width(label, lv_pct(100));
+    lv_obj_set_style_text_color(label, Theme::Text(), 0);
+    lv_obj_set_style_pad_bottom(label, 4, 0);
 }
 
 void ScanScreen::AddChannelRow(
@@ -857,6 +877,23 @@ const char *ScanScreen::CongestionLevelToText(
             return "#FF5252 Poor#";
 
         case WiFiCongestionLevel::Unknown:
+        default:
+            return "#9E9E9E Unknown#";
+    }
+}
+
+const char *ScanScreen::RecommendationConfidenceToText(
+    WiFiRecommendationConfidence confidence)
+{
+    switch (confidence)
+    {
+        case WiFiRecommendationConfidence::High:
+            return "#00E676 High#";
+        case WiFiRecommendationConfidence::Medium:
+            return "#FFD740 Medium#";
+        case WiFiRecommendationConfidence::Low:
+            return "#FF9800 Low#";
+        case WiFiRecommendationConfidence::Unknown:
         default:
             return "#9E9E9E Unknown#";
     }
