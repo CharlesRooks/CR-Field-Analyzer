@@ -15,6 +15,24 @@ public:
     // of the most recent completed scans.
     static constexpr uint8_t ScoreHistoryDepth = 3;
 
+    // A complete automatic measurement session collects
+    // exactly one full rolling-history window.
+    static constexpr uint8_t
+        AutomaticSessionScanCount = ScoreHistoryDepth;
+
+    // Non-blocking pause between successful automatic scans.
+    static constexpr uint32_t
+        AutomaticSessionDelayMs = 1500;
+
+    // A transient ESP32 scan failure does not end the
+    // measurement session immediately. The same sample is
+    // retried and failed attempts are not added to history.
+    static constexpr uint8_t
+        AutomaticSessionMaxRetries = 2;
+
+    static constexpr uint32_t
+        AutomaticSessionRetryDelayMs = 2000;
+
     // Candidate scores within this many points of the
     // best observed score are treated as comparable.
     static constexpr uint16_t
@@ -34,7 +52,23 @@ public:
     // current scan cache and rolling score history.
     static bool ResetMeasurementSession();
 
+    // Clears the previous session and automatically collects
+    // the three scans required for a mature recommendation.
+    static bool StartAutomaticMeasurementSession();
+
+    // Stops the automatic sequence. If a scan is already in
+    // progress, it is allowed to finish safely before stopping.
+    static bool CancelAutomaticMeasurementSession();
+
     static WiFiScanState GetState();
+
+    static WiFiMeasurementSessionState
+        GetMeasurementSessionState();
+
+    static uint8_t
+        GetMeasurementSessionCompletedScanCount();
+
+    static bool IsAutomaticMeasurementSessionActive();
     static uint8_t GetNetworkCount();
 
     static const WiFiNetworkInfo *GetNetwork(
@@ -83,6 +117,15 @@ private:
     static uint8_t scoreHistoryCount;
     static uint8_t scoreHistoryWriteIndex;
 
+    static WiFiMeasurementSessionState
+        measurementSessionState;
+
+    static uint8_t
+        measurementSessionCompletedScanCount;
+
+    static uint32_t nextAutomaticScanAtMs;
+    static uint8_t automaticSessionRetryCount;
+
     static uint8_t recommendedCandidateIndex;
 
     static void ClearResults();
@@ -96,6 +139,14 @@ private:
     static void BuildChannelAssessments();
 
     static void AddCurrentScoresToHistory();
+
+    static void UpdateAutomaticMeasurementSession();
+    static void HandleAutomaticScanCompleted();
+    static void HandleAutomaticScanFailed();
+
+    static bool HasReachedDeadline(
+        uint32_t nowMs,
+        uint32_t deadlineMs);
 
     static uint16_t CalculateAverageScore(
         uint8_t candidateIndex);

@@ -35,6 +35,16 @@ uint16_t
 uint8_t WiFiService::scoreHistoryCount = 0;
 uint8_t WiFiService::scoreHistoryWriteIndex = 0;
 
+WiFiMeasurementSessionState
+    WiFiService::measurementSessionState =
+        WiFiMeasurementSessionState::Idle;
+
+uint8_t
+    WiFiService::measurementSessionCompletedScanCount = 0;
+
+uint32_t WiFiService::nextAutomaticScanAtMs = 0;
+uint8_t WiFiService::automaticSessionRetryCount = 0;
+
 uint8_t WiFiService::recommendedCandidateIndex =
     0xFF;
 
@@ -42,6 +52,14 @@ void WiFiService::Begin()
 {
     ClearScoreHistory();
     ClearResults();
+
+    measurementSessionState =
+        WiFiMeasurementSessionState::Idle;
+
+    measurementSessionCompletedScanCount = 0;
+    nextAutomaticScanAtMs = 0;
+    automaticSessionRetryCount = 0;
+
     state = WiFiScanState::Idle;
 
     WiFi.mode(WIFI_STA);
@@ -117,6 +135,13 @@ bool WiFiService::ResetMeasurementSession()
     ClearScoreHistory();
     ClearResults();
 
+    measurementSessionState =
+        WiFiMeasurementSessionState::Idle;
+
+    measurementSessionCompletedScanCount = 0;
+    nextAutomaticScanAtMs = 0;
+    automaticSessionRetryCount = 0;
+
     state = WiFiScanState::Idle;
 
     Serial.printf(
@@ -127,52 +152,143 @@ bool WiFiService::ResetMeasurementSession()
     return true;
 }
 
-void WiFiService::Update()
+bool WiFiService::StartAutomaticMeasurementSession()
 {
-    if (state != WiFiScanState::Scanning)
+    if (state == WiFiScanState::Scanning ||
+        IsAutomaticMeasurementSessionActive())
     {
-        return;
+        return false;
     }
 
-    const int16_t result =
-        WiFi.scanComplete();
-
-    if (result == WIFI_SCAN_RUNNING)
+    if (!ResetMeasurementSession())
     {
-        return;
+        return false;
     }
 
-    if (result == WIFI_SCAN_FAILED)
-    {
-        WiFi.scanDelete();
-        state = WiFiScanState::Failed;
-
-        Serial.println("WiFiService: Scan failed");
-
-        return;
-    }
-
-    CopyResults(result);
-
-    // The scan results have now been copied into the
-    // SentinelOS fixed-size cache.
-    WiFi.scanDelete();
-
-    state = WiFiScanState::Complete;
-
-    PublishScanCompleted();
+    measurementSessionState =
+        WiFiMeasurementSessionState::Running;
 
     Serial.printf(
-        "WiFiService: Scan complete, %u networks cached\n",
-        networkCount);
+        "WiFiService: Automatic measurement session "
+        "started, target %u scans\n",
+        AutomaticSessionScanCount);
 
-    LogChannelStatistics();
-    LogChannelRecommendation();
+    if (!StartScan())
+    {
+        HandleAutomaticScanFailed();
+
+        return measurementSessionState ==
+            WiFiMeasurementSessionState::Running;
+    }
+
+    return true;
+}
+
+bool WiFiService::CancelAutomaticMeasurementSession()
+{
+    if (measurementSessionState !=
+        WiFiMeasurementSessionState::Running)
+    {
+        return false;
+    }
+
+    if (state == WiFiScanState::Scanning)
+    {
+        measurementSessionState =
+            WiFiMeasurementSessionState::Cancelling;
+
+        Serial.println(
+            "WiFiService: Automatic session cancel "
+            "requested; finishing active scan");
+    }
+    else
+    {
+        measurementSessionState =
+            WiFiMeasurementSessionState::Cancelled;
+
+        nextAutomaticScanAtMs = 0;
+
+        Serial.printf(
+            "WiFiService: Automatic session cancelled "
+            "after %u/%u scans\n",
+            measurementSessionCompletedScanCount,
+            AutomaticSessionScanCount);
+    }
+
+    return true;
+}
+
+void WiFiService::Update()
+{
+    if (state == WiFiScanState::Scanning)
+    {
+        const int16_t result =
+            WiFi.scanComplete();
+
+        if (result == WIFI_SCAN_RUNNING)
+        {
+            return;
+        }
+
+        if (result == WIFI_SCAN_FAILED)
+        {
+            WiFi.scanDelete();
+            state = WiFiScanState::Failed;
+
+            Serial.println("WiFiService: Scan failed");
+
+            HandleAutomaticScanFailed();
+            return;
+        }
+
+        CopyResults(result);
+
+        // The scan results have now been copied into the
+        // SentinelOS fixed-size cache.
+        WiFi.scanDelete();
+
+        state = WiFiScanState::Complete;
+
+        Serial.printf(
+            "WiFiService: Scan complete, %u networks cached\n",
+            networkCount);
+
+        LogChannelStatistics();
+        LogChannelRecommendation();
+
+        // Update automatic-session progress before publishing
+        // completion so the UI reads the new session state.
+        HandleAutomaticScanCompleted();
+        PublishScanCompleted();
+        return;
+    }
+
+    UpdateAutomaticMeasurementSession();
 }
 
 WiFiScanState WiFiService::GetState()
 {
     return state;
+}
+
+WiFiMeasurementSessionState
+WiFiService::GetMeasurementSessionState()
+{
+    return measurementSessionState;
+}
+
+uint8_t
+WiFiService::GetMeasurementSessionCompletedScanCount()
+{
+    return measurementSessionCompletedScanCount;
+}
+
+bool WiFiService::IsAutomaticMeasurementSessionActive()
+{
+    return measurementSessionState ==
+               WiFiMeasurementSessionState::Running ||
+           measurementSessionState ==
+               WiFiMeasurementSessionState::Cancelling;
 }
 
 uint8_t WiFiService::GetNetworkCount()
@@ -645,6 +761,172 @@ void WiFiService::AddCurrentScoresToHistory()
     {
         ++scoreHistoryCount;
     }
+}
+
+void WiFiService::UpdateAutomaticMeasurementSession()
+{
+    if (measurementSessionState !=
+        WiFiMeasurementSessionState::Running)
+    {
+        return;
+    }
+
+    if (measurementSessionCompletedScanCount >=
+        AutomaticSessionScanCount)
+    {
+        measurementSessionState =
+            WiFiMeasurementSessionState::Complete;
+        return;
+    }
+
+    if (!HasReachedDeadline(
+            millis(),
+            nextAutomaticScanAtMs))
+    {
+        return;
+    }
+
+    if (!StartScan())
+    {
+        HandleAutomaticScanFailed();
+    }
+}
+
+void WiFiService::HandleAutomaticScanCompleted()
+{
+    if (measurementSessionState !=
+            WiFiMeasurementSessionState::Running &&
+        measurementSessionState !=
+            WiFiMeasurementSessionState::Cancelling)
+    {
+        return;
+    }
+
+    // A successful sample clears the consecutive retry count.
+    automaticSessionRetryCount = 0;
+
+    if (measurementSessionCompletedScanCount <
+        AutomaticSessionScanCount)
+    {
+        ++measurementSessionCompletedScanCount;
+    }
+
+    if (measurementSessionState ==
+        WiFiMeasurementSessionState::Cancelling)
+    {
+        measurementSessionState =
+            WiFiMeasurementSessionState::Cancelled;
+
+        nextAutomaticScanAtMs = 0;
+
+        Serial.printf(
+            "WiFiService: Automatic session cancelled "
+            "after %u/%u scans\n",
+            measurementSessionCompletedScanCount,
+            AutomaticSessionScanCount);
+
+        return;
+    }
+
+    if (measurementSessionCompletedScanCount >=
+        AutomaticSessionScanCount)
+    {
+        measurementSessionState =
+            WiFiMeasurementSessionState::Complete;
+
+        nextAutomaticScanAtMs = 0;
+
+        Serial.printf(
+            "WiFiService: Automatic measurement session "
+            "complete, %u/%u scans\n",
+            measurementSessionCompletedScanCount,
+            AutomaticSessionScanCount);
+
+        return;
+    }
+
+    nextAutomaticScanAtMs =
+        millis() + AutomaticSessionDelayMs;
+
+    Serial.printf(
+        "WiFiService: Automatic session progress "
+        "%u/%u; next scan in %lu ms\n",
+        measurementSessionCompletedScanCount,
+        AutomaticSessionScanCount,
+        static_cast<unsigned long>(
+            AutomaticSessionDelayMs));
+}
+
+void WiFiService::HandleAutomaticScanFailed()
+{
+    if (!IsAutomaticMeasurementSessionActive())
+    {
+        return;
+    }
+
+    if (measurementSessionState ==
+        WiFiMeasurementSessionState::Cancelling)
+    {
+        measurementSessionState =
+            WiFiMeasurementSessionState::Cancelled;
+
+        nextAutomaticScanAtMs = 0;
+        automaticSessionRetryCount = 0;
+
+        Serial.printf(
+            "WiFiService: Automatic session cancelled "
+            "after %u/%u completed scans\n",
+            measurementSessionCompletedScanCount,
+            AutomaticSessionScanCount);
+
+        return;
+    }
+
+    if (automaticSessionRetryCount <
+        AutomaticSessionMaxRetries)
+    {
+        ++automaticSessionRetryCount;
+
+        measurementSessionState =
+            WiFiMeasurementSessionState::Running;
+
+        nextAutomaticScanAtMs =
+            millis() +
+            AutomaticSessionRetryDelayMs;
+
+        Serial.printf(
+            "WiFiService: Automatic scan retry %u/%u "
+            "scheduled in %lu ms; progress remains "
+            "%u/%u completed scans\n",
+            automaticSessionRetryCount,
+            AutomaticSessionMaxRetries,
+            static_cast<unsigned long>(
+                AutomaticSessionRetryDelayMs),
+            measurementSessionCompletedScanCount,
+            AutomaticSessionScanCount);
+
+        return;
+    }
+
+    measurementSessionState =
+        WiFiMeasurementSessionState::Failed;
+
+    nextAutomaticScanAtMs = 0;
+
+    Serial.printf(
+        "WiFiService: Automatic session failed "
+        "after %u retries and %u/%u completed scans\n",
+        AutomaticSessionMaxRetries,
+        measurementSessionCompletedScanCount,
+        AutomaticSessionScanCount);
+}
+
+bool WiFiService::HasReachedDeadline(
+    uint32_t nowMs,
+    uint32_t deadlineMs)
+{
+    return static_cast<int32_t>(
+               nowMs - deadlineMs) >= 0;
 }
 
 uint16_t WiFiService::CalculateAverageScore(

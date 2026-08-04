@@ -52,7 +52,6 @@ private:
     lv_obj_t *channelsButton = nullptr;
 
     bool refreshPending = true;
-    bool sessionResetNotice = false;
 
     WiFiScanState displayedState =
         WiFiScanState::Idle;
@@ -65,10 +64,12 @@ private:
     void RefreshFromService();
 
     void UpdateScanButton(
-        WiFiScanState state);
+        WiFiScanState state,
+        WiFiMeasurementSessionState sessionState);
 
     void UpdateNewSessionButton(
-        WiFiScanState state);
+        WiFiScanState state,
+        WiFiMeasurementSessionState sessionState);
 
     void UpdateViewButtons();
 

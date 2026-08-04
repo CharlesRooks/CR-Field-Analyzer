@@ -336,11 +336,24 @@ void ScanScreen::RefreshFromService()
     const WiFiScanState state =
         WiFiService::GetState();
 
+    const WiFiMeasurementSessionState sessionState =
+        WiFiService::GetMeasurementSessionState();
+
+    const uint8_t completedSessionScans =
+        WiFiService::
+            GetMeasurementSessionCompletedScanCount();
+
     const uint8_t networkCount =
         WiFiService::GetNetworkCount();
 
-    UpdateScanButton(state);
-    UpdateNewSessionButton(state);
+    UpdateScanButton(
+        state,
+        sessionState);
+
+    UpdateNewSessionButton(
+        state,
+        sessionState);
+
     UpdateViewButtons();
 
     lv_obj_clean(networkList);
@@ -348,42 +361,117 @@ void ScanScreen::RefreshFromService()
     switch (state)
     {
         case WiFiScanState::Idle:
-            if (sessionResetNotice)
+            lv_label_set_text(
+                statusLabel,
+                "Ready");
+
+            AddMessageRow(
+                "No scan has been completed.");
+            break;
+
+        case WiFiScanState::Scanning:
+        {
+            if (sessionState ==
+                WiFiMeasurementSessionState::Cancelling)
             {
                 lv_label_set_text(
                     statusLabel,
-                    "New session");
+                    "Stopping...");
 
                 AddMessageRow(
-                    "Measurement history cleared. "
-                    "Start a new scan.");
+                    "Finishing the active scan before "
+                    "stopping the automatic session...");
+            }
+            else if (sessionState ==
+                     WiFiMeasurementSessionState::Running)
+            {
+                const uint8_t currentScan =
+                    completedSessionScans + 1 <=
+                            WiFiService::
+                                AutomaticSessionScanCount
+                        ? completedSessionScans + 1
+                        : WiFiService::
+                              AutomaticSessionScanCount;
+
+                char statusText[24];
+                char messageText[96];
+
+                std::snprintf(
+                    statusText,
+                    sizeof(statusText),
+                    "Scan %u/%u...",
+                    currentScan,
+                    WiFiService::
+                        AutomaticSessionScanCount);
+
+                std::snprintf(
+                    messageText,
+                    sizeof(messageText),
+                    "Automatic measurement scan %u of %u...",
+                    currentScan,
+                    WiFiService::
+                        AutomaticSessionScanCount);
+
+                lv_label_set_text(
+                    statusLabel,
+                    statusText);
+
+                AddMessageRow(
+                    messageText);
             }
             else
             {
                 lv_label_set_text(
                     statusLabel,
-                    "Ready");
+                    "Scanning...");
 
                 AddMessageRow(
-                    "No scan has been completed.");
+                    "Scanning nearby Wi-Fi networks...");
             }
-            break;
 
-        case WiFiScanState::Scanning:
-            lv_label_set_text(
-                statusLabel,
-                "Scanning...");
-
-            AddMessageRow(
-                "Scanning nearby Wi-Fi networks...");
             break;
+        }
 
         case WiFiScanState::Complete:
         {
-            char statusText[24];
+            char statusText[32];
 
-            if (activeView ==
-                WiFiScanView::Networks)
+            if (sessionState ==
+                WiFiMeasurementSessionState::Running)
+            {
+                std::snprintf(
+                    statusText,
+                    sizeof(statusText),
+                    "%u/%u complete",
+                    completedSessionScans,
+                    WiFiService::
+                        AutomaticSessionScanCount);
+            }
+            else if (sessionState ==
+                     WiFiMeasurementSessionState::Complete)
+            {
+                std::snprintf(
+                    statusText,
+                    sizeof(statusText),
+                    "%u/%u complete",
+                    WiFiService::
+                        AutomaticSessionScanCount,
+                    WiFiService::
+                        AutomaticSessionScanCount);
+            }
+            else if (sessionState ==
+                     WiFiMeasurementSessionState::Cancelled)
+            {
+                std::snprintf(
+                    statusText,
+                    sizeof(statusText),
+                    "%u/%u stopped",
+                    completedSessionScans,
+                    WiFiService::
+                        AutomaticSessionScanCount);
+            }
+            else if (activeView ==
+                     WiFiScanView::Networks)
             {
                 std::snprintf(
                     statusText,
@@ -426,10 +514,17 @@ void ScanScreen::RefreshFromService()
         case WiFiScanState::Failed:
             lv_label_set_text(
                 statusLabel,
-                "Scan failed");
+                sessionState ==
+                        WiFiMeasurementSessionState::Failed
+                    ? "Session failed"
+                    : "Scan failed");
 
             AddMessageRow(
-                "The Wi-Fi scan could not be completed.");
+                sessionState ==
+                        WiFiMeasurementSessionState::Failed
+                    ? "The automatic measurement session "
+                      "could not be completed."
+                    : "The Wi-Fi scan could not be completed.");
             break;
     }
 
@@ -439,7 +534,8 @@ void ScanScreen::RefreshFromService()
 }
 
 void ScanScreen::UpdateScanButton(
-    WiFiScanState state)
+    WiFiScanState state,
+    WiFiMeasurementSessionState sessionState)
 {
     if (scanButton == nullptr ||
         scanButtonLabel == nullptr)
@@ -447,7 +543,14 @@ void ScanScreen::UpdateScanButton(
         return;
     }
 
-    if (state == WiFiScanState::Scanning)
+    const bool automaticSessionActive =
+        sessionState ==
+            WiFiMeasurementSessionState::Running ||
+        sessionState ==
+            WiFiMeasurementSessionState::Cancelling;
+
+    if (state == WiFiScanState::Scanning ||
+        automaticSessionActive)
     {
         lv_obj_add_state(
             scanButton,
@@ -455,7 +558,9 @@ void ScanScreen::UpdateScanButton(
 
         lv_label_set_text(
             scanButtonLabel,
-            "Scanning");
+            state == WiFiScanState::Scanning
+                ? "Scanning"
+                : "Auto");
     }
     else
     {
@@ -470,12 +575,66 @@ void ScanScreen::UpdateScanButton(
 }
 
 void ScanScreen::UpdateNewSessionButton(
-    WiFiScanState state)
+    WiFiScanState state,
+    WiFiMeasurementSessionState sessionState)
 {
-    if (newSessionButton == nullptr)
+    if (newSessionButton == nullptr ||
+        newSessionButtonLabel == nullptr)
     {
         return;
     }
+
+    if (sessionState ==
+        WiFiMeasurementSessionState::Running)
+    {
+        lv_obj_clear_state(
+            newSessionButton,
+            LV_STATE_DISABLED);
+
+        lv_label_set_text(
+            newSessionButtonLabel,
+            "Cancel");
+
+        lv_obj_set_style_bg_color(
+            newSessionButton,
+            Theme::Accent(),
+            0);
+
+        lv_obj_set_style_bg_opa(
+            newSessionButton,
+            LV_OPA_COVER,
+            0);
+
+        return;
+    }
+
+    if (sessionState ==
+        WiFiMeasurementSessionState::Cancelling)
+    {
+        lv_obj_add_state(
+            newSessionButton,
+            LV_STATE_DISABLED);
+
+        lv_label_set_text(
+            newSessionButtonLabel,
+            "Wait");
+
+        return;
+    }
+
+    lv_label_set_text(
+        newSessionButtonLabel,
+        "New");
+
+    lv_obj_set_style_bg_color(
+        newSessionButton,
+        Theme::Muted(),
+        0);
+
+    lv_obj_set_style_bg_opa(
+        newSessionButton,
+        LV_OPA_50,
+        0);
 
     if (state == WiFiScanState::Scanning)
     {
@@ -1098,18 +1257,15 @@ void ScanScreen::HandleScanButton(
     }
 
     if (WiFiService::GetState() ==
-        WiFiScanState::Scanning)
+            WiFiScanState::Scanning ||
+        WiFiService::
+            IsAutomaticMeasurementSessionActive())
     {
         return;
     }
 
     const bool started =
         WiFiService::StartScan();
-
-    if (started)
-    {
-        instance->sessionResetNotice = false;
-    }
 
     instance->refreshPending = true;
 
@@ -1133,29 +1289,40 @@ void ScanScreen::HandleNewSessionButton(
         return;
     }
 
-    const bool reset =
-        WiFiService::ResetMeasurementSession();
+    const WiFiMeasurementSessionState sessionState =
+        WiFiService::GetMeasurementSessionState();
 
-    if (!reset)
+    if (sessionState ==
+        WiFiMeasurementSessionState::Running)
+    {
+        if (!WiFiService::
+                CancelAutomaticMeasurementSession())
+        {
+            Serial.println(
+                "ScanScreen: Automatic session "
+                "cancel request failed");
+        }
+
+        instance->refreshPending = true;
+        return;
+    }
+
+    if (sessionState ==
+        WiFiMeasurementSessionState::Cancelling)
     {
         return;
     }
 
-    // A new measurement session should immediately begin
-    // collecting its first independent sample.
-    instance->sessionResetNotice = false;
-
     const bool started =
-        WiFiService::StartScan();
+        WiFiService::StartAutomaticMeasurementSession();
 
     instance->refreshPending = true;
 
-    if (!started &&
-        WiFiService::GetState() !=
-            WiFiScanState::Scanning)
+    if (!started)
     {
         Serial.println(
-            "ScanScreen: New session scan failed");
+            "ScanScreen: Automatic measurement "
+            "session failed to start");
     }
 }
 

@@ -10,6 +10,16 @@ enum class WiFiScanState : uint8_t
     Failed
 };
 
+enum class WiFiMeasurementSessionState : uint8_t
+{
+    Idle = 0,
+    Running,
+    Cancelling,
+    Complete,
+    Cancelled,
+    Failed
+};
+
 enum class WiFiSignalQuality : uint8_t
 {
     Unknown = 0,
