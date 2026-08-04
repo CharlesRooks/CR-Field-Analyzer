@@ -30,6 +30,9 @@ private:
     static void HandleScanButton(
         lv_event_t *event);
 
+    static void HandleNewSessionButton(
+        lv_event_t *event);
+
     static void HandleNetworksButton(
         lv_event_t *event);
 
@@ -42,10 +45,14 @@ private:
     lv_obj_t *scanButton = nullptr;
     lv_obj_t *scanButtonLabel = nullptr;
 
+    lv_obj_t *newSessionButton = nullptr;
+    lv_obj_t *newSessionButtonLabel = nullptr;
+
     lv_obj_t *networksButton = nullptr;
     lv_obj_t *channelsButton = nullptr;
 
     bool refreshPending = true;
+    bool sessionResetNotice = false;
 
     WiFiScanState displayedState =
         WiFiScanState::Idle;
@@ -58,6 +65,9 @@ private:
     void RefreshFromService();
 
     void UpdateScanButton(
+        WiFiScanState state);
+
+    void UpdateNewSessionButton(
         WiFiScanState state);
 
     void UpdateViewButtons();

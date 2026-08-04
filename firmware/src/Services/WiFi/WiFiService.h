@@ -30,6 +30,10 @@ public:
 
     static bool StartScan();
 
+    // Starts a fresh measurement session by clearing the
+    // current scan cache and rolling score history.
+    static bool ResetMeasurementSession();
+
     static WiFiScanState GetState();
     static uint8_t GetNetworkCount();
 

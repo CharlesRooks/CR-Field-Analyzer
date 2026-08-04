@@ -176,6 +176,49 @@ void ScanScreen::CreateContent()
         LV_TEXT_ALIGN_RIGHT,
         0);
 
+    newSessionButton =
+        lv_btn_create(header);
+
+    lv_obj_set_size(
+        newSessionButton,
+        62,
+        28);
+
+    lv_obj_set_style_bg_color(
+        newSessionButton,
+        Theme::Muted(),
+        0);
+
+    lv_obj_set_style_bg_opa(
+        newSessionButton,
+        LV_OPA_50,
+        0);
+
+    lv_obj_set_style_opa(
+        newSessionButton,
+        LV_OPA_30,
+        LV_PART_MAIN | LV_STATE_DISABLED);
+
+    lv_obj_add_event_cb(
+        newSessionButton,
+        ScanScreen::HandleNewSessionButton,
+        LV_EVENT_CLICKED,
+        nullptr);
+
+    newSessionButtonLabel =
+        lv_label_create(newSessionButton);
+
+    lv_label_set_text(
+        newSessionButtonLabel,
+        "New");
+
+    lv_obj_set_style_text_color(
+        newSessionButtonLabel,
+        Theme::Text(),
+        0);
+
+    lv_obj_center(newSessionButtonLabel);
+
     scanButton =
         lv_btn_create(header);
 
@@ -297,6 +340,7 @@ void ScanScreen::RefreshFromService()
         WiFiService::GetNetworkCount();
 
     UpdateScanButton(state);
+    UpdateNewSessionButton(state);
     UpdateViewButtons();
 
     lv_obj_clean(networkList);
@@ -304,12 +348,25 @@ void ScanScreen::RefreshFromService()
     switch (state)
     {
         case WiFiScanState::Idle:
-            lv_label_set_text(
-                statusLabel,
-                "Ready");
+            if (sessionResetNotice)
+            {
+                lv_label_set_text(
+                    statusLabel,
+                    "New session");
 
-            AddMessageRow(
-                "No scan has been completed.");
+                AddMessageRow(
+                    "Measurement history cleared. "
+                    "Start a new scan.");
+            }
+            else
+            {
+                lv_label_set_text(
+                    statusLabel,
+                    "Ready");
+
+                AddMessageRow(
+                    "No scan has been completed.");
+            }
             break;
 
         case WiFiScanState::Scanning:
@@ -409,6 +466,28 @@ void ScanScreen::UpdateScanButton(
         lv_label_set_text(
             scanButtonLabel,
             "Scan");
+    }
+}
+
+void ScanScreen::UpdateNewSessionButton(
+    WiFiScanState state)
+{
+    if (newSessionButton == nullptr)
+    {
+        return;
+    }
+
+    if (state == WiFiScanState::Scanning)
+    {
+        lv_obj_add_state(
+            newSessionButton,
+            LV_STATE_DISABLED);
+    }
+    else
+    {
+        lv_obj_clear_state(
+            newSessionButton,
+            LV_STATE_DISABLED);
     }
 }
 
@@ -1027,6 +1106,11 @@ void ScanScreen::HandleScanButton(
     const bool started =
         WiFiService::StartScan();
 
+    if (started)
+    {
+        instance->sessionResetNotice = false;
+    }
+
     instance->refreshPending = true;
 
     if (!started &&
@@ -1035,6 +1119,43 @@ void ScanScreen::HandleScanButton(
     {
         Serial.println(
             "ScanScreen: Scan request failed");
+    }
+}
+
+void ScanScreen::HandleNewSessionButton(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr ||
+        lv_event_get_code(event) !=
+            LV_EVENT_CLICKED)
+    {
+        return;
+    }
+
+    const bool reset =
+        WiFiService::ResetMeasurementSession();
+
+    if (!reset)
+    {
+        return;
+    }
+
+    // A new measurement session should immediately begin
+    // collecting its first independent sample.
+    instance->sessionResetNotice = false;
+
+    const bool started =
+        WiFiService::StartScan();
+
+    instance->refreshPending = true;
+
+    if (!started &&
+        WiFiService::GetState() !=
+            WiFiScanState::Scanning)
+    {
+        Serial.println(
+            "ScanScreen: New session scan failed");
     }
 }
 

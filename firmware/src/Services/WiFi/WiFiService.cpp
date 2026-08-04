@@ -99,6 +99,34 @@ bool WiFiService::StartScan()
     return true;
 }
 
+bool WiFiService::ResetMeasurementSession()
+{
+    // Do not invalidate scan data while the asynchronous
+    // radio operation is still writing its results.
+    if (state == WiFiScanState::Scanning)
+    {
+        Serial.println(
+            "WiFiService: Session reset rejected "
+            "while scan is running");
+
+        return false;
+    }
+
+    WiFi.scanDelete();
+
+    ClearScoreHistory();
+    ClearResults();
+
+    state = WiFiScanState::Idle;
+
+    Serial.printf(
+        "WiFiService: Measurement session reset, "
+        "history 0/%u scans\n",
+        ScoreHistoryDepth);
+
+    return true;
+}
+
 void WiFiService::Update()
 {
     if (state != WiFiScanState::Scanning)
