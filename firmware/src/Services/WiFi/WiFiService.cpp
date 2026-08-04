@@ -27,6 +27,9 @@ WiFiChannelAssessment
 WiFiChannelRecommendation
     WiFiService::channelRecommendation{};
 
+WiFiMeasurementSummary
+    WiFiService::measurementSummary{};
+
 uint16_t
     WiFiService::candidateScoreHistory
         [WiFiService::CandidateChannelCount]
@@ -52,6 +55,7 @@ void WiFiService::Begin()
 {
     ClearScoreHistory();
     ClearResults();
+    ClearMeasurementSummary();
 
     measurementSessionState =
         WiFiMeasurementSessionState::Idle;
@@ -134,6 +138,7 @@ bool WiFiService::ResetMeasurementSession()
 
     ClearScoreHistory();
     ClearResults();
+    ClearMeasurementSummary();
 
     measurementSessionState =
         WiFiMeasurementSessionState::Idle;
@@ -357,6 +362,12 @@ WiFiService::GetChannelRecommendation()
     return channelRecommendation;
 }
 
+const WiFiMeasurementSummary &
+WiFiService::GetMeasurementSummary()
+{
+    return measurementSummary;
+}
+
 void WiFiService::ClearResults()
 {
     networkCount = 0;
@@ -435,6 +446,65 @@ void WiFiService::ClearScoreHistory()
                 [sampleIndex] = 0;
         }
     }
+}
+
+void WiFiService::ClearMeasurementSummary()
+{
+    measurementSummary =
+        WiFiMeasurementSummary{};
+}
+
+void WiFiService::CaptureMeasurementSummary()
+{
+    measurementSummary =
+        WiFiMeasurementSummary{};
+
+    measurementSummary.available = true;
+
+    measurementSummary.completedScanCount =
+        measurementSessionCompletedScanCount;
+
+    measurementSummary.networkCount =
+        networkCount;
+
+    measurementSummary.occupiedChannelCount =
+        occupiedChannelCount;
+
+    measurementSummary.recommendation =
+        channelRecommendation;
+
+    for (uint8_t index = 0;
+         index < CandidateChannelCount &&
+         index <
+             WiFiMeasurementSummary::
+                 CandidateCapacity;
+         ++index)
+    {
+        measurementSummary.candidates[index] =
+            candidateAssessments[index];
+    }
+
+    for (uint8_t channel = 0;
+         channel <= Max2_4GHzChannel &&
+         channel <
+             WiFiMeasurementSummary::
+                 ChannelCapacity;
+         ++channel)
+    {
+        measurementSummary.channels[channel] =
+            channelInfo[channel];
+    }
+
+    Serial.printf(
+        "WiFiService: Session summary captured - "
+        "%u networks, %u occupied channels, "
+        "best CH %u, confidence %s\n",
+        measurementSummary.networkCount,
+        measurementSummary.occupiedChannelCount,
+        measurementSummary.recommendation.bestChannel,
+        ConfidenceToText(
+            measurementSummary.recommendation
+                .confidence));
 }
 
 void WiFiService::CopyResults(
@@ -831,6 +901,8 @@ void WiFiService::HandleAutomaticScanCompleted()
     if (measurementSessionCompletedScanCount >=
         AutomaticSessionScanCount)
     {
+        CaptureMeasurementSummary();
+
         measurementSessionState =
             WiFiMeasurementSessionState::Complete;
 

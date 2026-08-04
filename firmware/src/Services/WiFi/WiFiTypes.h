@@ -123,3 +123,23 @@ struct WiFiChannelRecommendation
 
     bool unique = false;
 };
+
+struct WiFiMeasurementSummary
+{
+    static constexpr uint8_t CandidateCapacity = 3;
+    static constexpr uint8_t ChannelCapacity = 15;
+
+    bool available = false;
+
+    uint8_t completedScanCount = 0;
+    uint8_t networkCount = 0;
+    uint8_t occupiedChannelCount = 0;
+
+    WiFiChannelRecommendation recommendation{};
+
+    WiFiChannelAssessment
+        candidates[CandidateCapacity] = {};
+
+    WiFiChannelInfo
+        channels[ChannelCapacity] = {};
+};

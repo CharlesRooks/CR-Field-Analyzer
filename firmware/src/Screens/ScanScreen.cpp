@@ -312,11 +312,18 @@ void ScanScreen::Update()
     const WiFiScanState currentState =
         WiFiService::GetState();
 
+    const WiFiMeasurementSessionState
+        currentSessionState =
+            WiFiService::
+                GetMeasurementSessionState();
+
     const uint8_t currentCount =
         WiFiService::GetNetworkCount();
 
     if (!refreshPending &&
         currentState == displayedState &&
+        currentSessionState ==
+            displayedSessionState &&
         currentCount == displayedNetworkCount)
     {
         return;
@@ -345,6 +352,17 @@ void ScanScreen::RefreshFromService()
 
     const uint8_t networkCount =
         WiFiService::GetNetworkCount();
+
+    if (sessionState ==
+            WiFiMeasurementSessionState::Complete &&
+        displayedSessionState !=
+            WiFiMeasurementSessionState::Complete)
+    {
+        // Surface the completed field summary once when the
+        // automatic measurement session finishes.
+        activeView =
+            WiFiScanView::Channels;
+    }
 
     UpdateScanButton(
         state,
@@ -529,6 +547,7 @@ void ScanScreen::RefreshFromService()
     }
 
     displayedState = state;
+    displayedSessionState = sessionState;
     displayedNetworkCount = networkCount;
     refreshPending = false;
 }
@@ -720,6 +739,53 @@ void ScanScreen::ShowNetworkResults(
 
 void ScanScreen::ShowChannelResults()
 {
+    const WiFiMeasurementSessionState sessionState =
+        WiFiService::GetMeasurementSessionState();
+
+    const WiFiMeasurementSummary &summary =
+        WiFiService::GetMeasurementSummary();
+
+    if (sessionState ==
+            WiFiMeasurementSessionState::Complete &&
+        summary.available)
+    {
+        AddCompletedSessionSummary(
+            summary);
+
+        for (uint8_t index = 0;
+             index <
+                 WiFiMeasurementSummary::
+                     CandidateCapacity;
+             ++index)
+        {
+            AddCandidateAssessmentRow(
+                summary.candidates[index]);
+        }
+
+        AddSectionLabel(
+            "FINAL SCAN CHANNEL DETAIL");
+
+        for (uint8_t channel = 1;
+             channel <
+                 WiFiMeasurementSummary::
+                     ChannelCapacity;
+             ++channel)
+        {
+            const WiFiChannelInfo &info =
+                summary.channels[channel];
+
+            if (info.networkCount == 0)
+            {
+                continue;
+            }
+
+            AddChannelRow(
+                info);
+        }
+
+        return;
+    }
+
     const WiFiChannelRecommendation
         &recommendation =
             WiFiService::GetChannelRecommendation();
@@ -1016,6 +1082,242 @@ void ScanScreen::AddRecommendationRow(
     lv_obj_set_style_radius(
         label,
         4,
+        0);
+}
+
+void ScanScreen::AddCompletedSessionSummary(
+    const WiFiMeasurementSummary &summary)
+{
+    const WiFiChannelRecommendation
+        &recommendation =
+            summary.recommendation;
+
+    char alternatives[48] = {};
+    size_t used = 0;
+
+    for (uint8_t index = 0;
+         index <
+             WiFiMeasurementSummary::
+                 CandidateCapacity;
+         ++index)
+    {
+        const WiFiChannelAssessment &assessment =
+            summary.candidates[index];
+
+        if (!assessment.comparable ||
+            assessment.recommended)
+        {
+            continue;
+        }
+
+        const int written =
+            std::snprintf(
+                alternatives + used,
+                sizeof(alternatives) - used,
+                used == 0
+                    ? "CH %u"
+                    : " / CH %u",
+                assessment.channel);
+
+        if (written <= 0)
+        {
+            continue;
+        }
+
+        const size_t available =
+            sizeof(alternatives) - used;
+
+        const size_t appended =
+            static_cast<size_t>(written) >=
+                    available
+                ? available - 1
+                : static_cast<size_t>(written);
+
+        used += appended;
+
+        if (used >=
+            sizeof(alternatives) - 1)
+        {
+            break;
+        }
+    }
+
+    char rowText[256];
+
+    if (recommendation.unique)
+    {
+        std::snprintf(
+            rowText,
+            sizeof(rowText),
+            "#00E676 SESSION COMPLETE#   %u/%u scans\n"
+            "Recommended CH %u   Confidence %s\n"
+            "Avg %u   Margin %u\n"
+            "Final scan: %u networks / %u channels   "
+            "Alt %s",
+            summary.completedScanCount,
+            WiFiService::AutomaticSessionScanCount,
+            recommendation.bestChannel,
+            RecommendationConfidenceToText(
+                recommendation.confidence),
+            recommendation.bestScore,
+            recommendation.scoreMargin,
+            summary.networkCount,
+            summary.occupiedChannelCount,
+            alternatives[0] == '\0'
+                ? "None"
+                : alternatives);
+    }
+    else
+    {
+        char comparable[48] = {};
+        size_t comparableUsed = 0;
+
+        for (uint8_t index = 0;
+             index <
+                 WiFiMeasurementSummary::
+                     CandidateCapacity;
+             ++index)
+        {
+            const WiFiChannelAssessment &assessment =
+                summary.candidates[index];
+
+            if (!assessment.comparable)
+            {
+                continue;
+            }
+
+            const int written =
+                std::snprintf(
+                    comparable + comparableUsed,
+                    sizeof(comparable) -
+                        comparableUsed,
+                    comparableUsed == 0
+                        ? "CH %u"
+                        : " / CH %u",
+                    assessment.channel);
+
+            if (written <= 0)
+            {
+                continue;
+            }
+
+            const size_t available =
+                sizeof(comparable) -
+                comparableUsed;
+
+            const size_t appended =
+                static_cast<size_t>(written) >=
+                        available
+                    ? available - 1
+                    : static_cast<size_t>(written);
+
+            comparableUsed += appended;
+
+            if (comparableUsed >=
+                sizeof(comparable) - 1)
+            {
+                break;
+            }
+        }
+
+        std::snprintf(
+            rowText,
+            sizeof(rowText),
+            "#00E676 SESSION COMPLETE#   %u/%u scans\n"
+            "Comparable %s   Confidence %s\n"
+            "Best observed CH %u   Avg %u   Margin %u\n"
+            "Final scan: %u networks / %u channels",
+            summary.completedScanCount,
+            WiFiService::AutomaticSessionScanCount,
+            comparable[0] == '\0'
+                ? "None"
+                : comparable,
+            RecommendationConfidenceToText(
+                recommendation.confidence),
+            recommendation.bestChannel,
+            recommendation.bestScore,
+            recommendation.scoreMargin,
+            summary.networkCount,
+            summary.occupiedChannelCount);
+    }
+
+    lv_obj_t *label =
+        lv_label_create(networkList);
+
+    lv_label_set_text(
+        label,
+        rowText);
+
+    lv_label_set_recolor(
+        label,
+        true);
+
+    lv_label_set_long_mode(
+        label,
+        LV_LABEL_LONG_WRAP);
+
+    lv_obj_set_width(
+        label,
+        lv_pct(100));
+
+    lv_obj_set_style_text_color(
+        label,
+        Theme::Text(),
+        0);
+
+    lv_obj_set_style_pad_all(
+        label,
+        8,
+        0);
+
+    lv_obj_set_style_border_width(
+        label,
+        1,
+        0);
+
+    lv_obj_set_style_border_color(
+        label,
+        Theme::Accent(),
+        0);
+
+    lv_obj_set_style_border_opa(
+        label,
+        LV_OPA_COVER,
+        0);
+
+    lv_obj_set_style_radius(
+        label,
+        4,
+        0);
+}
+
+void ScanScreen::AddSectionLabel(
+    const char *text)
+{
+    lv_obj_t *label =
+        lv_label_create(networkList);
+
+    lv_label_set_text(
+        label,
+        text);
+
+    lv_obj_set_width(
+        label,
+        lv_pct(100));
+
+    lv_obj_set_style_text_color(
+        label,
+        Theme::Muted(),
+        0);
+
+    lv_obj_set_style_pad_top(
+        label,
+        4,
+        0);
+
+    lv_obj_set_style_pad_bottom(
+        label,
+        2,
         0);
 }
 

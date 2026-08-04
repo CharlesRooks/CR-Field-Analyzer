@@ -56,6 +56,9 @@ private:
     WiFiScanState displayedState =
         WiFiScanState::Idle;
 
+    WiFiMeasurementSessionState displayedSessionState =
+        WiFiMeasurementSessionState::Idle;
+
     uint8_t displayedNetworkCount = 0;
 
     WiFiScanView activeView =
@@ -87,6 +90,12 @@ private:
     void AddRecommendationRow(
         const WiFiChannelRecommendation
             &recommendation);
+
+    void AddCompletedSessionSummary(
+        const WiFiMeasurementSummary &summary);
+
+    void AddSectionLabel(
+        const char *text);
 
     void AddCandidateAssessmentRow(
         const WiFiChannelAssessment &assessment);

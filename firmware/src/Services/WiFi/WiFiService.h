@@ -89,6 +89,9 @@ public:
     static const WiFiChannelRecommendation &
         GetChannelRecommendation();
 
+    static const WiFiMeasurementSummary &
+        GetMeasurementSummary();
+
 private:
     static constexpr uint8_t
         InvalidCandidateIndex = 0xFF;
@@ -108,6 +111,9 @@ private:
 
     static WiFiChannelRecommendation
         channelRecommendation;
+
+    static WiFiMeasurementSummary
+        measurementSummary;
 
     static uint16_t
         candidateScoreHistory
@@ -132,6 +138,8 @@ private:
     static void ClearChannelStatistics();
     static void ClearChannelAssessments();
     static void ClearScoreHistory();
+    static void ClearMeasurementSummary();
+    static void CaptureMeasurementSummary();
 
     static void CopyResults(int16_t resultCount);
     static void SortResultsBySignal();
