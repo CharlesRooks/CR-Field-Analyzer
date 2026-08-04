@@ -48,12 +48,12 @@ void ScanScreen::CreateContent()
 
     lv_obj_set_style_pad_all(
         layout,
-        8,
+        4,
         0);
 
     lv_obj_set_style_pad_row(
         layout,
-        8,
+        4,
         0);
 
     lv_obj_set_flex_flow(
@@ -64,6 +64,9 @@ void ScanScreen::CreateContent()
         layout,
         LV_OBJ_FLAG_SCROLLABLE);
 
+    // Compact single-row toolbar. The ApplicationFrame already
+    // identifies the current page, so the repeated "Wi-Fi Scan"
+    // title is omitted to preserve vertical result space.
     lv_obj_t *header =
         lv_obj_create(layout);
 
@@ -75,7 +78,7 @@ void ScanScreen::CreateContent()
 
     lv_obj_set_height(
         header,
-        32);
+        30);
 
     lv_obj_set_flex_flow(
         header,
@@ -83,26 +86,74 @@ void ScanScreen::CreateContent()
 
     lv_obj_set_flex_align(
         header,
-        LV_FLEX_ALIGN_SPACE_BETWEEN,
+        LV_FLEX_ALIGN_START,
         LV_FLEX_ALIGN_CENTER,
         LV_FLEX_ALIGN_CENTER);
 
-    lv_obj_t *title =
-        lv_label_create(header);
+    lv_obj_set_style_pad_column(
+        header,
+        6,
+        0);
+
+    lv_obj_clear_flag(
+        header,
+        LV_OBJ_FLAG_SCROLLABLE);
+
+    networksButton =
+        lv_btn_create(header);
+
+    lv_obj_set_size(
+        networksButton,
+        88,
+        28);
+
+    lv_obj_add_event_cb(
+        networksButton,
+        ScanScreen::HandleNetworksButton,
+        LV_EVENT_CLICKED,
+        nullptr);
+
+    lv_obj_t *networksLabel =
+        lv_label_create(networksButton);
 
     lv_label_set_text(
-        title,
-        "Wi-Fi Scan");
+        networksLabel,
+        "Networks");
 
     lv_obj_set_style_text_color(
-        title,
-        Theme::Accent(),
+        networksLabel,
+        Theme::Text(),
         0);
 
-    lv_obj_set_style_text_font(
-        title,
-        &lv_font_montserrat_20,
+    lv_obj_center(networksLabel);
+
+    channelsButton =
+        lv_btn_create(header);
+
+    lv_obj_set_size(
+        channelsButton,
+        88,
+        28);
+
+    lv_obj_add_event_cb(
+        channelsButton,
+        ScanScreen::HandleChannelsButton,
+        LV_EVENT_CLICKED,
+        nullptr);
+
+    lv_obj_t *channelsLabel =
+        lv_label_create(channelsButton);
+
+    lv_label_set_text(
+        channelsLabel,
+        "Channels");
+
+    lv_obj_set_style_text_color(
+        channelsLabel,
+        Theme::Text(),
         0);
+
+    lv_obj_center(channelsLabel);
 
     statusLabel =
         lv_label_create(header);
@@ -111,53 +162,62 @@ void ScanScreen::CreateContent()
         statusLabel,
         "Loading");
 
+    lv_obj_set_flex_grow(
+        statusLabel,
+        1);
+
     lv_obj_set_style_text_color(
         statusLabel,
         Theme::Muted(),
         0);
 
-        scanButton =
-            lv_btn_create(header);
+    lv_obj_set_style_text_align(
+        statusLabel,
+        LV_TEXT_ALIGN_RIGHT,
+        0);
 
-        lv_obj_set_size(
-            scanButton,
-            82,
-            30);
+    scanButton =
+        lv_btn_create(header);
 
-        lv_obj_set_style_bg_color(
-            scanButton,
-            Theme::Accent(),
-            0);
+    lv_obj_set_size(
+        scanButton,
+        72,
+        28);
 
-        lv_obj_set_style_bg_opa(
-            scanButton,
-            LV_OPA_COVER,
-            0);
+    lv_obj_set_style_bg_color(
+        scanButton,
+        Theme::Accent(),
+        0);
 
-        lv_obj_set_style_opa(
-            scanButton,
-            LV_OPA_50,
-            LV_PART_MAIN | LV_STATE_DISABLED);
+    lv_obj_set_style_bg_opa(
+        scanButton,
+        LV_OPA_COVER,
+        0);
 
-        lv_obj_add_event_cb(
-            scanButton,
-            ScanScreen::HandleScanButton,
-            LV_EVENT_CLICKED,
-            nullptr);
+    lv_obj_set_style_opa(
+        scanButton,
+        LV_OPA_50,
+        LV_PART_MAIN | LV_STATE_DISABLED);
 
-        scanButtonLabel =
-            lv_label_create(scanButton);
+    lv_obj_add_event_cb(
+        scanButton,
+        ScanScreen::HandleScanButton,
+        LV_EVENT_CLICKED,
+        nullptr);
 
-        lv_label_set_text(
-            scanButtonLabel,
-            "Scan");
+    scanButtonLabel =
+        lv_label_create(scanButton);
 
-        lv_obj_set_style_text_color(
-            scanButtonLabel,
-            Theme::Text(),
-            0);
+    lv_label_set_text(
+        scanButtonLabel,
+        "Scan");
 
-        lv_obj_center(scanButtonLabel);
+    lv_obj_set_style_text_color(
+        scanButtonLabel,
+        Theme::Text(),
+        0);
+
+    lv_obj_center(scanButtonLabel);
 
     networkList =
         lv_obj_create(layout);
@@ -186,12 +246,12 @@ void ScanScreen::CreateContent()
 
     lv_obj_set_style_pad_all(
         networkList,
-        4,
+        2,
         0);
 
     lv_obj_set_style_pad_row(
         networkList,
-        6,
+        4,
         0);
 
     lv_obj_set_scroll_dir(
@@ -199,6 +259,8 @@ void ScanScreen::CreateContent()
         LV_DIR_VER);
 
     refreshPending = true;
+
+    UpdateViewButtons();
     RefreshFromService();
 }
 
@@ -235,6 +297,7 @@ void ScanScreen::RefreshFromService()
         WiFiService::GetNetworkCount();
 
     UpdateScanButton(state);
+    UpdateViewButtons();
 
     lv_obj_clean(networkList);
 
@@ -262,37 +325,42 @@ void ScanScreen::RefreshFromService()
         {
             char statusText[24];
 
-            std::snprintf(
-                statusText,
-                sizeof(statusText),
-                "%u network%s",
-                networkCount,
-                networkCount == 1 ? "" : "s");
+            if (activeView ==
+                WiFiScanView::Networks)
+            {
+                std::snprintf(
+                    statusText,
+                    sizeof(statusText),
+                    "%u network%s",
+                    networkCount,
+                    networkCount == 1 ? "" : "s");
+            }
+            else
+            {
+                const uint8_t occupiedChannels =
+                    WiFiService::GetOccupiedChannelCount();
+
+                std::snprintf(
+                    statusText,
+                    sizeof(statusText),
+                    "%u channel%s",
+                    occupiedChannels,
+                    occupiedChannels == 1 ? "" : "s");
+            }
 
             lv_label_set_text(
                 statusLabel,
                 statusText);
 
-            if (networkCount == 0)
+            if (activeView ==
+                WiFiScanView::Networks)
             {
-                AddMessageRow(
-                    "No Wi-Fi networks were found.");
-                break;
+                ShowNetworkResults(
+                    networkCount);
             }
-
-            for (uint8_t index = 0;
-                 index < networkCount;
-                 ++index)
+            else
             {
-                const WiFiNetworkInfo *network =
-                    WiFiService::GetNetwork(index);
-
-                if (network == nullptr)
-                {
-                    continue;
-                }
-
-                AddNetworkRow(*network);
+                ShowChannelResults();
             }
 
             break;
@@ -341,6 +409,106 @@ void ScanScreen::UpdateScanButton(
         lv_label_set_text(
             scanButtonLabel,
             "Scan");
+    }
+}
+
+void ScanScreen::UpdateViewButtons()
+{
+    if (networksButton == nullptr ||
+        channelsButton == nullptr)
+    {
+        return;
+    }
+
+    const bool showingNetworks =
+        activeView ==
+        WiFiScanView::Networks;
+
+    lv_obj_set_style_bg_color(
+        networksButton,
+        showingNetworks
+            ? Theme::Accent()
+            : Theme::Muted(),
+        0);
+
+    lv_obj_set_style_bg_opa(
+        networksButton,
+        showingNetworks
+            ? LV_OPA_COVER
+            : LV_OPA_30,
+        0);
+
+    lv_obj_set_style_bg_color(
+        channelsButton,
+        showingNetworks
+            ? Theme::Muted()
+            : Theme::Accent(),
+        0);
+
+    lv_obj_set_style_bg_opa(
+        channelsButton,
+        showingNetworks
+            ? LV_OPA_30
+            : LV_OPA_COVER,
+        0);
+}
+
+void ScanScreen::ShowNetworkResults(
+    uint8_t networkCount)
+{
+    if (networkCount == 0)
+    {
+        AddMessageRow(
+            "No Wi-Fi networks were found.");
+
+        return;
+    }
+
+    for (uint8_t index = 0;
+         index < networkCount;
+         ++index)
+    {
+        const WiFiNetworkInfo *network =
+            WiFiService::GetNetwork(index);
+
+        if (network == nullptr)
+        {
+            continue;
+        }
+
+        AddNetworkRow(*network);
+    }
+}
+
+void ScanScreen::ShowChannelResults()
+{
+    const uint8_t occupiedChannels =
+        WiFiService::GetOccupiedChannelCount();
+
+    if (occupiedChannels == 0)
+    {
+        AddMessageRow(
+            "No occupied Wi-Fi channels were found.");
+
+        return;
+    }
+
+    for (uint8_t channel = 1;
+         channel <=
+             WiFiService::Max2_4GHzChannel;
+         ++channel)
+    {
+        const WiFiChannelInfo *info =
+            WiFiService::GetChannelInfo(
+                channel);
+
+        if (info == nullptr ||
+            info->networkCount == 0)
+        {
+            continue;
+        }
+
+        AddChannelRow(*info);
     }
 }
 
@@ -406,7 +574,7 @@ void ScanScreen::AddNetworkRow(
     lv_label_set_text(
         label,
         rowText);
-    
+
     lv_label_set_recolor(
         label,
         true);
@@ -427,6 +595,73 @@ void ScanScreen::AddNetworkRow(
     lv_obj_set_style_pad_bottom(
         label,
         6,
+        0);
+
+    lv_obj_set_style_border_width(
+        label,
+        1,
+        0);
+
+    lv_obj_set_style_border_side(
+        label,
+        LV_BORDER_SIDE_BOTTOM,
+        0);
+
+    lv_obj_set_style_border_color(
+        label,
+        Theme::Muted(),
+        0);
+
+    lv_obj_set_style_border_opa(
+        label,
+        LV_OPA_30,
+        0);
+}
+
+void ScanScreen::AddChannelRow(
+    const WiFiChannelInfo &channelInfo)
+{
+    char rowText[128];
+
+    std::snprintf(
+        rowText,
+        sizeof(rowText),
+        "Channel %u\n"
+        "%u network%s   Strongest %ld dBm   "
+        "Average %ld dBm",
+        channelInfo.channel,
+        channelInfo.networkCount,
+        channelInfo.networkCount == 1
+            ? ""
+            : "s",
+        static_cast<long>(
+            channelInfo.strongestRssi),
+        static_cast<long>(
+            channelInfo.averageRssi));
+
+    lv_obj_t *label =
+        lv_label_create(networkList);
+
+    lv_label_set_text(
+        label,
+        rowText);
+
+    lv_label_set_long_mode(
+        label,
+        LV_LABEL_LONG_WRAP);
+
+    lv_obj_set_width(
+        label,
+        lv_pct(100));
+
+    lv_obj_set_style_text_color(
+        label,
+        Theme::Text(),
+        0);
+
+    lv_obj_set_style_pad_bottom(
+        label,
+        8,
         0);
 
     lv_obj_set_style_border_width(
@@ -544,6 +779,54 @@ void ScanScreen::HandleScanButton(
         Serial.println(
             "ScanScreen: Scan request failed");
     }
+}
+
+void ScanScreen::HandleNetworksButton(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr ||
+        lv_event_get_code(event) !=
+            LV_EVENT_CLICKED)
+    {
+        return;
+    }
+
+    if (instance->activeView ==
+        WiFiScanView::Networks)
+    {
+        return;
+    }
+
+    instance->activeView =
+        WiFiScanView::Networks;
+
+    instance->UpdateViewButtons();
+    instance->refreshPending = true;
+}
+
+void ScanScreen::HandleChannelsButton(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr ||
+        lv_event_get_code(event) !=
+            LV_EVENT_CLICKED)
+    {
+        return;
+    }
+
+    if (instance->activeView ==
+        WiFiScanView::Channels)
+    {
+        return;
+    }
+
+    instance->activeView =
+        WiFiScanView::Channels;
+
+    instance->UpdateViewButtons();
+    instance->refreshPending = true;
 }
 
 void ScanScreen::HandleMessage(

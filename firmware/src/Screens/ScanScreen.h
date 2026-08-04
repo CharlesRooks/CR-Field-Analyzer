@@ -6,6 +6,12 @@
 
 #include <lvgl.h>
 
+enum class WiFiScanView : uint8_t
+{
+    Networks = 0,
+    Channels
+};
+
 class ScanScreen : public Page
 {
 public:
@@ -24,11 +30,20 @@ private:
     static void HandleScanButton(
         lv_event_t *event);
 
+    static void HandleNetworksButton(
+        lv_event_t *event);
+
+    static void HandleChannelsButton(
+        lv_event_t *event);
+
     lv_obj_t *statusLabel = nullptr;
     lv_obj_t *networkList = nullptr;
 
     lv_obj_t *scanButton = nullptr;
     lv_obj_t *scanButtonLabel = nullptr;
+
+    lv_obj_t *networksButton = nullptr;
+    lv_obj_t *channelsButton = nullptr;
 
     bool refreshPending = true;
 
@@ -37,16 +52,29 @@ private:
 
     uint8_t displayedNetworkCount = 0;
 
+    WiFiScanView activeView =
+        WiFiScanView::Networks;
+
     void RefreshFromService();
 
     void UpdateScanButton(
         WiFiScanState state);
+
+    void UpdateViewButtons();
+
+    void ShowNetworkResults(
+        uint8_t networkCount);
+
+    void ShowChannelResults();
 
     void AddMessageRow(
         const char *text);
 
     void AddNetworkRow(
         const WiFiNetworkInfo &network);
+
+    void AddChannelRow(
+        const WiFiChannelInfo &channelInfo);
 
     static const char *SignalQualityToText(
         WiFiSignalQuality quality);
