@@ -13,6 +13,7 @@
 #include "../Services/Display/DisplayService.h"
 #include "../Managers/PowerManager.h"
 #include "../Services/WiFi/WiFiService.h"
+#include "../Services/Storage/StorageService.h"
 
 
 static LilyGo_Class amoled;
@@ -66,6 +67,8 @@ void SentinelOS::Begin()
             delay(1000);
         }
     }
+
+    StorageService::Begin();
 
     beginLvglHelper(amoled);
 
