@@ -2,6 +2,7 @@
 
 #include "../Core/Messaging/MessageBus.h"
 #include "../Services/WiFi/WiFiService.h"
+#include "../Services/Storage/StorageService.h"
 #include "../UI/Theme.h"
 
 #include <Arduino.h>
@@ -29,6 +30,15 @@ void ScanScreen::Begin()
         Serial.println(
             "ScanScreen: Failed to subscribe "
             "to WiFiScanCompleted");
+    }
+
+    if (!MessageBus::Subscribe(
+            MessageType::WiFiMeasurementSessionCompleted,
+            ScanScreen::HandleMessage))
+    {
+        Serial.println(
+            "ScanScreen: Failed to subscribe "
+            "to WiFiMeasurementSessionCompleted");
     }
 }
 
@@ -176,6 +186,55 @@ void ScanScreen::CreateContent()
         LV_TEXT_ALIGN_RIGHT,
         0);
 
+    // Saved-session review is entered from the existing toolbar.
+    // It does not consume an additional row of result space.
+    historyButton =
+        lv_btn_create(header);
+
+    lv_obj_set_size(
+        historyButton,
+        64,
+        28);
+
+    lv_obj_set_style_bg_color(
+        historyButton,
+        Theme::Muted(),
+        0);
+
+    lv_obj_set_style_bg_opa(
+        historyButton,
+        LV_OPA_50,
+        0);
+
+    lv_obj_set_style_opa(
+        historyButton,
+        LV_OPA_30,
+        LV_PART_MAIN | LV_STATE_DISABLED);
+
+    lv_obj_add_event_cb(
+        historyButton,
+        ScanScreen::HandleHistoryButton,
+        LV_EVENT_CLICKED,
+        nullptr);
+
+    historyButtonLabel =
+        lv_label_create(historyButton);
+
+    lv_label_set_text(
+        historyButtonLabel,
+        "History");
+
+    lv_obj_set_style_text_color(
+        historyButtonLabel,
+        Theme::Text(),
+        0);
+
+    lv_obj_center(historyButtonLabel);
+
+    lv_obj_add_flag(
+        historyButton,
+        LV_OBJ_FLAG_HIDDEN);
+
     newSessionButton =
         lv_btn_create(header);
 
@@ -304,6 +363,7 @@ void ScanScreen::CreateContent()
     refreshPending = true;
 
     UpdateViewButtons();
+    UpdateHistoryControls();
     RefreshFromService();
 }
 
@@ -320,11 +380,16 @@ void ScanScreen::Update()
     const uint8_t currentCount =
         WiFiService::GetNetworkCount();
 
+    const uint8_t currentSavedSessionCount =
+        StorageService::GetSavedSessionCount();
+
     if (!refreshPending &&
         currentState == displayedState &&
         currentSessionState ==
             displayedSessionState &&
-        currentCount == displayedNetworkCount)
+        currentCount == displayedNetworkCount &&
+        currentSavedSessionCount ==
+            displayedSavedSessionCount)
     {
         return;
     }
@@ -373,6 +438,7 @@ void ScanScreen::RefreshFromService()
         sessionState);
 
     UpdateViewButtons();
+    UpdateHistoryControls();
 
     lv_obj_clean(networkList);
 
@@ -454,7 +520,21 @@ void ScanScreen::RefreshFromService()
         {
             char statusText[32];
 
-            if (sessionState ==
+            if (activeView ==
+                    WiFiScanView::Channels &&
+                reviewingSavedSession)
+            {
+                const uint8_t savedCount =
+                    StorageService::GetSavedSessionCount();
+
+                std::snprintf(
+                    statusText,
+                    sizeof(statusText),
+                    "Saved %u/%u",
+                    selectedSavedSessionIndex + 1,
+                    savedCount);
+            }
+            else if (sessionState ==
                 WiFiMeasurementSessionState::Running)
             {
                 std::snprintf(
@@ -549,6 +629,8 @@ void ScanScreen::RefreshFromService()
     displayedState = state;
     displayedSessionState = sessionState;
     displayedNetworkCount = networkCount;
+    displayedSavedSessionCount =
+        StorageService::GetSavedSessionCount();
     refreshPending = false;
 }
 
@@ -710,6 +792,130 @@ void ScanScreen::UpdateViewButtons()
         0);
 }
 
+void ScanScreen::UpdateHistoryControls()
+{
+    if (historyButton == nullptr ||
+        historyButtonLabel == nullptr ||
+        newSessionButton == nullptr ||
+        newSessionButtonLabel == nullptr ||
+        scanButton == nullptr ||
+        scanButtonLabel == nullptr)
+    {
+        return;
+    }
+
+    const uint8_t savedCount =
+        StorageService::GetSavedSessionCount();
+
+    const bool measurementActive =
+        WiFiService::GetState() ==
+            WiFiScanState::Scanning ||
+        WiFiService::
+            IsAutomaticMeasurementSessionActive();
+
+    if (activeView != WiFiScanView::Channels ||
+        savedCount == 0 ||
+        measurementActive)
+    {
+        reviewingSavedSession = false;
+        selectedSavedSessionIndex = 0;
+
+        lv_obj_add_flag(
+            historyButton,
+            LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
+    lv_obj_clear_flag(
+        historyButton,
+        LV_OBJ_FLAG_HIDDEN);
+
+    if (selectedSavedSessionIndex >= savedCount)
+    {
+        selectedSavedSessionIndex =
+            savedCount - 1;
+    }
+
+    if (!reviewingSavedSession)
+    {
+        lv_label_set_text(
+            historyButtonLabel,
+            "History");
+
+        lv_obj_set_style_bg_color(
+            historyButton,
+            Theme::Muted(),
+            0);
+
+        lv_obj_set_style_bg_opa(
+            historyButton,
+            LV_OPA_50,
+            0);
+
+        return;
+    }
+
+    // In history mode, the normal New and Scan buttons become
+    // Older and Newer. This preserves all vertical result space.
+    lv_label_set_text(
+        historyButtonLabel,
+        "Live");
+
+    lv_obj_set_style_bg_color(
+        historyButton,
+        Theme::Accent(),
+        0);
+
+    lv_obj_set_style_bg_opa(
+        historyButton,
+        LV_OPA_COVER,
+        0);
+
+    lv_label_set_text(
+        newSessionButtonLabel,
+        "Older");
+
+    lv_label_set_text(
+        scanButtonLabel,
+        "Newer");
+
+    lv_obj_set_style_bg_color(
+        newSessionButton,
+        Theme::Muted(),
+        0);
+
+    lv_obj_set_style_bg_opa(
+        newSessionButton,
+        LV_OPA_50,
+        0);
+
+    if (selectedSavedSessionIndex + 1 < savedCount)
+    {
+        lv_obj_clear_state(
+            newSessionButton,
+            LV_STATE_DISABLED);
+    }
+    else
+    {
+        lv_obj_add_state(
+            newSessionButton,
+            LV_STATE_DISABLED);
+    }
+
+    if (selectedSavedSessionIndex > 0)
+    {
+        lv_obj_clear_state(
+            scanButton,
+            LV_STATE_DISABLED);
+    }
+    else
+    {
+        lv_obj_add_state(
+            scanButton,
+            LV_STATE_DISABLED);
+    }
+}
+
 void ScanScreen::ShowNetworkResults(
     uint8_t networkCount)
 {
@@ -739,6 +945,29 @@ void ScanScreen::ShowNetworkResults(
 
 void ScanScreen::ShowChannelResults()
 {
+    if (reviewingSavedSession)
+    {
+        const StoredWiFiMeasurementSession *saved =
+            StorageService::GetSavedSession(
+                selectedSavedSessionIndex);
+
+        if (saved != nullptr &&
+            saved->available &&
+            saved->summary.available)
+        {
+            AddSavedSessionHeader(
+                saved->sessionId,
+                saved->completedAtMs);
+
+            ShowMeasurementSummary(
+                saved->summary);
+            return;
+        }
+
+        reviewingSavedSession = false;
+        UpdateHistoryControls();
+    }
+
     const WiFiMeasurementSessionState sessionState =
         WiFiService::GetMeasurementSessionState();
 
@@ -749,40 +978,7 @@ void ScanScreen::ShowChannelResults()
             WiFiMeasurementSessionState::Complete &&
         summary.available)
     {
-        AddCompletedSessionSummary(
-            summary);
-
-        for (uint8_t index = 0;
-             index <
-                 WiFiMeasurementSummary::
-                     CandidateCapacity;
-             ++index)
-        {
-            AddCandidateAssessmentRow(
-                summary.candidates[index]);
-        }
-
-        AddSectionLabel(
-            "FINAL SCAN CHANNEL DETAIL");
-
-        for (uint8_t channel = 1;
-             channel <
-                 WiFiMeasurementSummary::
-                     ChannelCapacity;
-             ++channel)
-        {
-            const WiFiChannelInfo &info =
-                summary.channels[channel];
-
-            if (info.networkCount == 0)
-            {
-                continue;
-            }
-
-            AddChannelRow(
-                info);
-        }
-
+        ShowMeasurementSummary(summary);
         return;
     }
 
@@ -790,25 +986,21 @@ void ScanScreen::ShowChannelResults()
         &recommendation =
             WiFiService::GetChannelRecommendation();
 
-    AddRecommendationRow(
-        recommendation);
+    AddRecommendationRow(recommendation);
 
     for (uint8_t index = 0;
-         index <
-             WiFiService::CandidateChannelCount;
+         index < WiFiService::CandidateChannelCount;
          ++index)
     {
         const WiFiChannelAssessment *assessment =
-            WiFiService::GetCandidateAssessment(
-                index);
+            WiFiService::GetCandidateAssessment(index);
 
         if (assessment == nullptr)
         {
             continue;
         }
 
-        AddCandidateAssessmentRow(
-            *assessment);
+        AddCandidateAssessmentRow(*assessment);
     }
 
     const uint8_t occupiedChannels =
@@ -822,13 +1014,11 @@ void ScanScreen::ShowChannelResults()
     }
 
     for (uint8_t channel = 1;
-         channel <=
-             WiFiService::Max2_4GHzChannel;
+         channel <= WiFiService::Max2_4GHzChannel;
          ++channel)
     {
         const WiFiChannelInfo *info =
-            WiFiService::GetChannelInfo(
-                channel);
+            WiFiService::GetChannelInfo(channel);
 
         if (info == nullptr ||
             info->networkCount == 0)
@@ -838,6 +1028,68 @@ void ScanScreen::ShowChannelResults()
 
         AddChannelRow(*info);
     }
+}
+
+void ScanScreen::ShowMeasurementSummary(
+    const WiFiMeasurementSummary &summary)
+{
+    AddCompletedSessionSummary(summary);
+
+    for (uint8_t index = 0;
+         index <
+             WiFiMeasurementSummary::CandidateCapacity;
+         ++index)
+    {
+        AddCandidateAssessmentRow(
+            summary.candidates[index]);
+    }
+
+    AddSectionLabel(
+        "FINAL SCAN CHANNEL DETAIL");
+
+    for (uint8_t channel = 1;
+         channel <
+             WiFiMeasurementSummary::ChannelCapacity;
+         ++channel)
+    {
+        const WiFiChannelInfo &info =
+            summary.channels[channel];
+
+        if (info.networkCount == 0)
+        {
+            continue;
+        }
+
+        AddChannelRow(info);
+    }
+}
+
+void ScanScreen::AddSavedSessionHeader(
+    uint32_t sessionId,
+    uint32_t completedAtMs)
+{
+    const uint32_t totalSeconds =
+        completedAtMs / 1000UL;
+    const uint32_t hours =
+        totalSeconds / 3600UL;
+    const uint32_t minutes =
+        (totalSeconds / 60UL) % 60UL;
+    const uint32_t seconds =
+        totalSeconds % 60UL;
+
+    char text[96];
+
+    std::snprintf(
+        text,
+        sizeof(text),
+        "SAVED SESSION #%lu   "
+        "Captured at uptime %02lu:%02lu:%02lu",
+        static_cast<unsigned long>(sessionId),
+        static_cast<unsigned long>(hours),
+        static_cast<unsigned long>(minutes),
+        static_cast<unsigned long>(seconds));
+
+    AddSectionLabel(text);
 }
 
 void ScanScreen::AddMessageRow(
@@ -1558,6 +1810,17 @@ void ScanScreen::HandleScanButton(
         return;
     }
 
+    if (instance->reviewingSavedSession)
+    {
+        if (instance->selectedSavedSessionIndex > 0)
+        {
+            --instance->selectedSavedSessionIndex;
+            instance->refreshPending = true;
+        }
+
+        return;
+    }
+
     if (WiFiService::GetState() ==
             WiFiScanState::Scanning ||
         WiFiService::
@@ -1591,6 +1854,21 @@ void ScanScreen::HandleNewSessionButton(
         return;
     }
 
+    if (instance->reviewingSavedSession)
+    {
+        const uint8_t savedCount =
+            StorageService::GetSavedSessionCount();
+
+        if (instance->selectedSavedSessionIndex + 1 <
+            savedCount)
+        {
+            ++instance->selectedSavedSessionIndex;
+            instance->refreshPending = true;
+        }
+
+        return;
+    }
+
     const WiFiMeasurementSessionState sessionState =
         WiFiService::GetMeasurementSessionState();
 
@@ -1614,6 +1892,9 @@ void ScanScreen::HandleNewSessionButton(
     {
         return;
     }
+
+    instance->reviewingSavedSession = false;
+    instance->selectedSavedSessionIndex = 0;
 
     const bool started =
         WiFiService::StartAutomaticMeasurementSession();
@@ -1648,6 +1929,9 @@ void ScanScreen::HandleNetworksButton(
     instance->activeView =
         WiFiScanView::Networks;
 
+    instance->reviewingSavedSession = false;
+    instance->selectedSavedSessionIndex = 0;
+
     instance->UpdateViewButtons();
     instance->refreshPending = true;
 }
@@ -1676,6 +1960,49 @@ void ScanScreen::HandleChannelsButton(
     instance->refreshPending = true;
 }
 
+void ScanScreen::HandleHistoryButton(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr ||
+        lv_event_get_code(event) != LV_EVENT_CLICKED)
+    {
+        return;
+    }
+
+    if (WiFiService::GetState() ==
+            WiFiScanState::Scanning ||
+        WiFiService::
+            IsAutomaticMeasurementSessionActive())
+    {
+        return;
+    }
+
+    const uint8_t savedCount =
+        StorageService::GetSavedSessionCount();
+
+    if (savedCount == 0)
+    {
+        return;
+    }
+
+    if (instance->reviewingSavedSession)
+    {
+        instance->reviewingSavedSession = false;
+        instance->selectedSavedSessionIndex = 0;
+    }
+    else
+    {
+        instance->activeView =
+            WiFiScanView::Channels;
+        instance->reviewingSavedSession = true;
+        instance->selectedSavedSessionIndex = 0;
+    }
+
+    instance->UpdateViewButtons();
+    instance->refreshPending = true;
+}
+
 void ScanScreen::HandleMessage(
     const Message &message)
 {
@@ -1687,7 +2014,9 @@ void ScanScreen::HandleMessage(
     if (message.type !=
             MessageType::WiFiScanStarted &&
         message.type !=
-            MessageType::WiFiScanCompleted)
+            MessageType::WiFiScanCompleted &&
+        message.type !=
+            MessageType::WiFiMeasurementSessionCompleted)
     {
         return;
     }

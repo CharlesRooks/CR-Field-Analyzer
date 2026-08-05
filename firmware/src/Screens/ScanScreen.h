@@ -39,6 +39,9 @@ private:
     static void HandleChannelsButton(
         lv_event_t *event);
 
+    static void HandleHistoryButton(
+        lv_event_t *event);
+
     lv_obj_t *statusLabel = nullptr;
     lv_obj_t *networkList = nullptr;
 
@@ -51,6 +54,9 @@ private:
     lv_obj_t *networksButton = nullptr;
     lv_obj_t *channelsButton = nullptr;
 
+    lv_obj_t *historyButton = nullptr;
+    lv_obj_t *historyButtonLabel = nullptr;
+
     bool refreshPending = true;
 
     WiFiScanState displayedState =
@@ -60,6 +66,10 @@ private:
         WiFiMeasurementSessionState::Idle;
 
     uint8_t displayedNetworkCount = 0;
+    uint8_t displayedSavedSessionCount = 0;
+
+    bool reviewingSavedSession = false;
+    uint8_t selectedSavedSessionIndex = 0;
 
     WiFiScanView activeView =
         WiFiScanView::Networks;
@@ -75,11 +85,19 @@ private:
         WiFiMeasurementSessionState sessionState);
 
     void UpdateViewButtons();
+    void UpdateHistoryControls();
 
     void ShowNetworkResults(
         uint8_t networkCount);
 
     void ShowChannelResults();
+
+    void ShowMeasurementSummary(
+        const WiFiMeasurementSummary &summary);
+
+    void AddSavedSessionHeader(
+        uint32_t sessionId,
+        uint32_t completedAtMs);
 
     void AddMessageRow(
         const char *text);

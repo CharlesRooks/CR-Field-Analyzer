@@ -1,6 +1,15 @@
 #include "ApplicationFrame.h"
 #include "Theme.h"
 
+namespace
+{
+constexpr int ContentX = 10;
+constexpr int ContentY = 44;
+constexpr int FooterHeight = 34;
+constexpr int BottomMargin = 4;
+constexpr int HeaderSeparatorY = 39;
+}
+
 void ApplicationFrame::Show(ScreenID currentScreen)
 {
     Theme::PrepareScreen();
@@ -14,23 +23,16 @@ void ApplicationFrame::Show(ScreenID currentScreen)
     const int screenWidth = lv_obj_get_width(lv_scr_act());
     const int screenHeight = lv_obj_get_height(lv_scr_act());
 
-    const int contentX = 10;
-    const int contentY = 68;
-    const int footerHeight = 34;
-    const int bottomMargin = 4;
-
     lv_obj_set_size(
         contentArea,
         screenWidth - 20,
-        screenHeight - contentY - footerHeight - bottomMargin
-    );
+        screenHeight - ContentY - FooterHeight - BottomMargin);
 
     lv_obj_align(
         contentArea,
         LV_ALIGN_TOP_LEFT,
-        contentX,
-        contentY
-    );
+        ContentX,
+        ContentY);
 
     lv_obj_set_style_bg_opa(contentArea, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(contentArea, 0, 0);
@@ -56,7 +58,11 @@ void ApplicationFrame::CreateSeparators()
 {
     lv_obj_t *topLine = lv_obj_create(lv_scr_act());
     lv_obj_set_size(topLine, 220, 1);
-    lv_obj_align(topLine, LV_ALIGN_TOP_LEFT, 10, 63);
+    lv_obj_align(
+        topLine,
+        LV_ALIGN_TOP_LEFT,
+        10,
+        HeaderSeparatorY);
     lv_obj_set_style_bg_color(topLine, Theme::Muted(), 0);
     lv_obj_set_style_bg_opa(topLine, LV_OPA_50, 0);
     lv_obj_set_style_border_width(topLine, 0, 0);

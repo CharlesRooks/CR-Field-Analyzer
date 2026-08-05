@@ -189,6 +189,7 @@ private:
 
     static void PublishScanStarted();
     static void PublishScanCompleted();
+    static void PublishMeasurementSessionCompleted();
 
     static void LogChannelStatistics();
     static void LogChannelRecommendation();

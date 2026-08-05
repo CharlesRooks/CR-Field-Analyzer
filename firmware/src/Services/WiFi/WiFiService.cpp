@@ -908,6 +908,8 @@ void WiFiService::HandleAutomaticScanCompleted()
 
         nextAutomaticScanAtMs = 0;
 
+        PublishMeasurementSessionCompleted();
+
         Serial.printf(
             "WiFiService: Automatic measurement session "
             "complete, %u/%u scans\n",
@@ -1277,6 +1279,16 @@ void WiFiService::PublishScanCompleted()
     message.type = MessageType::WiFiScanCompleted;
     message.timestampMs = millis();
     message.wifiNetworkCount = networkCount;
+
+    MessageBus::Publish(message);
+}
+
+void WiFiService::PublishMeasurementSessionCompleted()
+{
+    Message message{};
+    message.type =
+        MessageType::WiFiMeasurementSessionCompleted;
+    message.timestampMs = millis();
 
     MessageBus::Publish(message);
 }

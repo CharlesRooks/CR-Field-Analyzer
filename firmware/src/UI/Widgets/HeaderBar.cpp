@@ -5,7 +5,20 @@
 #include <Arduino.h>
 #include <lvgl.h>
 
-static const char *GetPageTitle(ScreenID screen)
+namespace
+{
+constexpr lv_coord_t HeaderTop = 8;
+constexpr lv_coord_t HorizontalMargin = 8;
+constexpr lv_coord_t HeaderLabelHeight = 22;
+
+// Each label is positioned independently. The page title is anchored to
+// the physical centre of the screen instead of being placed between two
+// unequal side columns.
+constexpr lv_coord_t BrandWidth = 92;
+constexpr lv_coord_t PageWidth = 88;
+constexpr lv_coord_t PowerWidth = 78;
+
+const char *GetPageTitle(ScreenID screen)
 {
     switch (screen)
     {
@@ -26,24 +39,68 @@ static const char *GetPageTitle(ScreenID screen)
     }
 }
 
+void ConfigureSingleLineLabel(
+    lv_obj_t *label,
+    lv_coord_t width,
+    const lv_font_t *font,
+    lv_color_t colour,
+    lv_text_align_t alignment)
+{
+    // A fixed one-line height is essential. LV_SIZE_CONTENT allowed LVGL
+    // to increase the label height and wrap text onto a second line.
+    lv_obj_set_size(label, width, HeaderLabelHeight);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
+    lv_obj_set_style_text_font(label, font, 0);
+    lv_obj_set_style_text_color(label, colour, 0);
+    lv_obj_set_style_text_align(label, alignment, 0);
+}
+}
+
 void HeaderBar::Show(ScreenID current)
 {
-    brandLabel = lv_label_create(lv_scr_act());
+    lv_obj_t *screen = lv_scr_act();
+
+    brandLabel = lv_label_create(screen);
     lv_label_set_text(brandLabel, "SentinelOS");
-    lv_obj_set_style_text_color(brandLabel, Theme::Accent(), 0);
-    lv_obj_set_style_text_font(brandLabel, &lv_font_montserrat_20, 0);
-    lv_obj_align(brandLabel, LV_ALIGN_TOP_LEFT, 10, 8);
+    ConfigureSingleLineLabel(
+        brandLabel,
+        BrandWidth,
+        &lv_font_montserrat_16,
+        Theme::Accent(),
+        LV_TEXT_ALIGN_LEFT);
+    lv_obj_align(
+        brandLabel,
+        LV_ALIGN_TOP_LEFT,
+        HorizontalMargin,
+        HeaderTop);
 
-    powerLabel = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_color(powerLabel, Theme::Text(), 0);
-    lv_obj_align(powerLabel, LV_ALIGN_TOP_RIGHT, -10, 10);
+    pageLabel = lv_label_create(screen);
+    ConfigureSingleLineLabel(
+        pageLabel,
+        PageWidth,
+        &lv_font_montserrat_14,
+        Theme::Text(),
+        LV_TEXT_ALIGN_CENTER);
+    lv_obj_align(
+        pageLabel,
+        LV_ALIGN_TOP_MID,
+        0,
+        HeaderTop + 1);
 
-    pageLabel = lv_label_create(lv_scr_act());
-    lv_obj_set_style_text_color(pageLabel, Theme::Text(), 0);
-    lv_obj_align(pageLabel, LV_ALIGN_TOP_LEFT, 10, 36);
+    powerLabel = lv_label_create(screen);
+    ConfigureSingleLineLabel(
+        powerLabel,
+        PowerWidth,
+        &lv_font_montserrat_12,
+        Theme::Text(),
+        LV_TEXT_ALIGN_RIGHT);
+    lv_obj_align(
+        powerLabel,
+        LV_ALIGN_TOP_RIGHT,
+        -HorizontalMargin,
+        HeaderTop + 2);
 
     SetCurrent(current);
-
     Update();
 }
 
@@ -66,8 +123,7 @@ void HeaderBar::Update()
 
     PowerService::FormatStatus(
         buffer,
-        sizeof(buffer)
-    );
+        sizeof(buffer));
 
     lv_label_set_text(powerLabel, buffer);
 }
