@@ -46,6 +46,15 @@ void SentinelOS::Begin()
             "ERROR: SentinelOS failed to subscribe to NavigationChanged");
     }
 
+    if (!MessageBus::Subscribe(
+            MessageType::WiFiMeasurementSessionCompleted,
+            SentinelOS::HandleMessage))
+    {
+        Serial.println(
+            "ERROR: SentinelOS failed to subscribe to "
+            "WiFiMeasurementSessionCompleted");
+    }
+
     Serial.println("BOOT CHECK");
 
     Serial.println();
@@ -145,6 +154,25 @@ void SentinelOS::Update()
 
             PowerService::Update();
             WiFiService::Update();
+
+            if (measurementSavePending)
+            {
+                const WiFiMeasurementSummary &summary =
+                    WiFiService::GetMeasurementSummary();
+
+                if (!StorageService::SaveMeasurementSummary(
+                        summary,
+                        pendingMeasurementCompletedAtMs))
+                {
+                    Serial.println(
+                        "SentinelOS: Completed measurement "
+                        "could not be persisted");
+                }
+
+                measurementSavePending = false;
+                pendingMeasurementCompletedAtMs = 0;
+            }
+
             PowerManager::Update();
             frame.Update();
             navigation.Update();
@@ -191,11 +219,27 @@ void SentinelOS::ChangeState(AppState newState)
 
 void SentinelOS::HandleMessage(const Message &message)
 {
-    if (instance == nullptr ||
-        message.type != MessageType::NavigationChanged)
+    if (instance == nullptr)
     {
         return;
     }
 
-    instance->frame.SetCurrent(message.screenId);
+    switch (message.type)
+    {
+        case MessageType::NavigationChanged:
+            instance->frame.SetCurrent(
+                message.screenId);
+            break;
+
+        case MessageType::WiFiMeasurementSessionCompleted:
+            // Keep the synchronous MessageBus handler short.
+            // The SD write is deferred to the main update loop.
+            instance->measurementSavePending = true;
+            instance->pendingMeasurementCompletedAtMs =
+                message.timestampMs;
+            break;
+
+        default:
+            break;
+    }
 }

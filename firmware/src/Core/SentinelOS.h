@@ -26,6 +26,9 @@ private:
     AppState currentState = AppState::Boot;
     uint32_t stateStartMs = 0;
 
+    bool measurementSavePending = false;
+    uint32_t pendingMeasurementCompletedAtMs = 0;
+
     NavigationManager navigation;
     InputManager input;
     ApplicationFrame frame;

@@ -38,6 +38,7 @@ enum class MessageType : uint8_t
     // Active Wi-Fi messages
     WiFiScanStarted,
     WiFiScanCompleted,
+    WiFiMeasurementSessionCompleted,
 
     // Reserved: notification events
     NotificationRaised
