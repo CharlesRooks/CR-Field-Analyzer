@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <FS.h>
 #include <SD.h>
+#include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -27,6 +28,64 @@ namespace
     constexpr uint64_t BytesPerMegabyte =
         1024ULL * 1024ULL;
 
+    constexpr uint32_t Crc32Initial =
+        0xFFFFFFFFUL;
+
+    bool TryExtractSessionFileId(
+        const char *path,
+        const char *requiredExtension,
+        uint32_t &sessionId)
+    {
+        sessionId = 0;
+
+        if (path == nullptr ||
+            requiredExtension == nullptr)
+        {
+            return false;
+        }
+
+        const char *name =
+            std::strrchr(path, '/');
+
+        name = name == nullptr ? path : name + 1;
+
+        constexpr const char Prefix[] =
+            "session_";
+        constexpr size_t PrefixLength =
+            sizeof(Prefix) - 1;
+
+        if (std::strncmp(
+                name,
+                Prefix,
+                PrefixLength) != 0)
+        {
+            return false;
+        }
+
+        const char *numberStart =
+            name + PrefixLength;
+
+        char *numberEnd = nullptr;
+        const unsigned long parsed =
+            std::strtoul(
+                numberStart,
+                &numberEnd,
+                10);
+
+        if (numberEnd == numberStart ||
+            parsed == 0 ||
+            std::strcmp(
+                numberEnd,
+                requiredExtension) != 0)
+        {
+            return false;
+        }
+
+        sessionId =
+            static_cast<uint32_t>(parsed);
+        return true;
+    }
+
     bool ParseUnsigned(
         const String &value,
         uint32_t &result)
@@ -39,6 +98,30 @@ namespace
         char *end = nullptr;
         const unsigned long parsed =
             std::strtoul(value.c_str(), &end, 10);
+
+        if (end == value.c_str() ||
+            *end != '\0')
+        {
+            return false;
+        }
+
+        result = static_cast<uint32_t>(parsed);
+        return true;
+    }
+
+    bool ParseHexUnsigned(
+        const String &value,
+        uint32_t &result)
+    {
+        if (value.length() == 0 ||
+            value.length() > 8)
+        {
+            return false;
+        }
+
+        char *end = nullptr;
+        const unsigned long parsed =
+            std::strtoul(value.c_str(), &end, 16);
 
         if (end == value.c_str() ||
             *end != '\0')
@@ -66,6 +149,86 @@ namespace
         return true;
     }
 
+    uint32_t UpdateCrc32(
+        uint32_t crc,
+        const uint8_t *data,
+        size_t length)
+    {
+        for (size_t index = 0;
+             index < length;
+             ++index)
+        {
+            crc ^= data[index];
+
+            for (uint8_t bit = 0;
+                 bit < 8;
+                 ++bit)
+            {
+                const uint32_t mask =
+                    static_cast<uint32_t>(
+                        -static_cast<int32_t>(crc & 1U));
+
+                crc = (crc >> 1U) ^
+                    (0xEDB88320UL & mask);
+            }
+        }
+
+        return crc;
+    }
+
+    uint32_t UpdateCrc32(
+        uint32_t crc,
+        const String &value)
+    {
+        return UpdateCrc32(
+            crc,
+            reinterpret_cast<const uint8_t *>(
+                value.c_str()),
+            value.length());
+    }
+
+    bool WriteCrcLine(
+        fs::File &file,
+        uint32_t &crc,
+        const char *format,
+        ...)
+    {
+        char line[128];
+
+        va_list arguments;
+        va_start(arguments, format);
+        const int length = std::vsnprintf(
+            line,
+            sizeof(line),
+            format,
+            arguments);
+        va_end(arguments);
+
+        if (length <= 0 ||
+            static_cast<size_t>(length) >=
+                sizeof(line))
+        {
+            return false;
+        }
+
+        const size_t bytesWritten = file.write(
+            reinterpret_cast<const uint8_t *>(line),
+            static_cast<size_t>(length));
+
+        if (bytesWritten !=
+            static_cast<size_t>(length))
+        {
+            return false;
+        }
+
+        crc = UpdateCrc32(
+            crc,
+            reinterpret_cast<const uint8_t *>(line),
+            static_cast<size_t>(length));
+
+        return true;
+    }
+
     void SortDescending(
         uint32_t *values,
         uint8_t count)
@@ -90,7 +253,6 @@ namespace
         }
     }
 }
-
 bool StorageService::available = false;
 uint8_t StorageService::detectedCardType = CARD_NONE;
 uint64_t StorageService::cardCapacityBytes = 0;
@@ -172,6 +334,7 @@ void StorageService::Begin()
         return;
     }
 
+    CleanupStaleTemporaryFile();
     LoadMeasurementSessions();
 
     Serial.println(
@@ -298,6 +461,9 @@ bool StorageService::SaveMeasurementSummary(
 
     StoredWiFiMeasurementSession session{};
     session.available = true;
+    session.formatVersion =
+        CurrentSessionFormatVersion;
+    session.integrityVerified = true;
     session.sessionId = nextSessionId;
     session.completedAtMs = completedAtMs;
     session.summary = summary;
@@ -387,6 +553,32 @@ bool StorageService::EnsureDirectories()
     return true;
 }
 
+bool StorageService::CleanupStaleTemporaryFile()
+{
+    if (!SD.exists(TemporarySessionPath))
+    {
+        return true;
+    }
+
+    Serial.println(
+        "StorageService: Found abandoned session "
+        "temporary file");
+
+    if (!SD.remove(TemporarySessionPath))
+    {
+        Serial.println(
+            "StorageService: Warning - abandoned "
+            "temporary file could not be removed");
+        return false;
+    }
+
+    Serial.println(
+        "StorageService: Abandoned session temporary "
+        "file removed");
+
+    return true;
+}
+
 void StorageService::LoadMeasurementSessions()
 {
     uint32_t sessionIds[
@@ -394,6 +586,7 @@ void StorageService::LoadMeasurementSessions()
 
     uint8_t enumeratedCount = 0;
     uint32_t maximumSessionId = 0;
+    bool enumerationTruncated = false;
 
     File directory = SD.open(SessionsDirectory);
 
@@ -422,10 +615,32 @@ void StorageService::LoadMeasurementSessions()
                         sessionId;
                     ++enumeratedCount;
                 }
+                else
+                {
+                    enumerationTruncated = true;
+                }
 
                 if (sessionId > maximumSessionId)
                 {
                     maximumSessionId = sessionId;
+                }
+            }
+            else
+            {
+                // Quarantined records must not be loaded as active
+                // .txt sessions, but their IDs still count so a
+                // future save never reuses a quarantined identifier.
+                uint32_t quarantinedSessionId = 0;
+
+                if (TryExtractSessionFileId(
+                        entry.name(),
+                        ".bad",
+                        quarantinedSessionId) &&
+                    quarantinedSessionId >
+                        maximumSessionId)
+                {
+                    maximumSessionId =
+                        quarantinedSessionId;
                 }
             }
         }
@@ -436,6 +651,14 @@ void StorageService::LoadMeasurementSessions()
 
     directory.close();
 
+    if (enumerationTruncated)
+    {
+        Serial.printf(
+            "StorageService: Warning - session index "
+            "limited to %u files\n",
+            EnumeratedSessionCapacity);
+    }
+
     SortDescending(
         sessionIds,
         enumeratedCount);
@@ -443,44 +666,83 @@ void StorageService::LoadMeasurementSessions()
     uint32_t keptIds[MaxSavedSessions] = {};
     uint8_t keptCount = 0;
 
-    for (uint8_t index = 0;
-         index < enumeratedCount &&
-         keptCount < MaxSavedSessions;
-         ++index)
-    {
-        StoredWiFiMeasurementSession session{};
+    uint32_t validIds[
+        EnumeratedSessionCapacity] = {};
+    uint8_t validCount = 0;
+    uint8_t skippedCount = 0;
 
-        if (!ReadMeasurementSession(
-                sessionIds[index],
-                session))
-        {
-            Serial.printf(
-                "StorageService: Ignored unreadable "
-                "session %lu\n",
-                static_cast<unsigned long>(
-                    sessionIds[index]));
-            continue;
-        }
-
-        savedSessions[keptCount] = session;
-        keptIds[keptCount] = session.sessionId;
-        ++keptCount;
-    }
-
-    savedSessionCount = keptCount;
-
-    // Remove valid session files outside the rolling retention
-    // window. Unrecognized files in the directory are preserved.
     for (uint8_t index = 0;
          index < enumeratedCount;
          ++index)
     {
-        if (!IsSessionIdKept(
+        StoredWiFiMeasurementSession session{};
+
+        const SessionReadResult result =
+            ReadMeasurementSession(
                 sessionIds[index],
+                session);
+
+        if (result != SessionReadResult::Success)
+        {
+            ++skippedCount;
+
+            Serial.printf(
+                "StorageService: Session %lu skipped - %s\n",
+                static_cast<unsigned long>(
+                    sessionIds[index]),
+                GetSessionReadResultText(result));
+
+            QuarantineSessionFile(
+                sessionIds[index],
+                result);
+            continue;
+        }
+
+        validIds[validCount] = session.sessionId;
+        ++validCount;
+
+        if (session.integrityVerified)
+        {
+            Serial.printf(
+                "StorageService: Session %lu verified "
+                "(format v%u, CRC32 valid)\n",
+                static_cast<unsigned long>(
+                    session.sessionId),
+                session.formatVersion);
+        }
+        else
+        {
+            Serial.printf(
+                "StorageService: Session %lu loaded as "
+                "legacy format v%u without checksum\n",
+                static_cast<unsigned long>(
+                    session.sessionId),
+                session.formatVersion);
+        }
+
+        if (keptCount < MaxSavedSessions)
+        {
+            savedSessions[keptCount] = session;
+            keptIds[keptCount] = session.sessionId;
+            ++keptCount;
+        }
+    }
+
+    savedSessionCount = keptCount;
+
+    // Remove only verified/parseable records outside the rolling
+    // retention window. Corrupt files are preserved for diagnosis
+    // and skipped safely on future boots.
+    for (uint8_t index = 0;
+         index < validCount;
+         ++index)
+    {
+        if (!IsSessionIdKept(
+                validIds[index],
                 keptIds,
                 keptCount))
         {
-            RemoveSessionFile(sessionIds[index]);
+            RemoveSessionFile(validIds[index]);
         }
     }
 
@@ -492,10 +754,12 @@ void StorageService::LoadMeasurementSessions()
     }
 
     Serial.printf(
-        "StorageService: Restored %u saved "
-        "measurement session%s; next ID %lu\n",
+        "StorageService: Restored %u valid saved "
+        "measurement session%s; %u invalid skipped; "
+        "next ID %lu\n",
         savedSessionCount,
         savedSessionCount == 1 ? "" : "s",
+        skippedCount,
         static_cast<unsigned long>(nextSessionId));
 }
 
@@ -506,8 +770,8 @@ bool StorageService::WriteMeasurementSession(
         !SD.remove(TemporarySessionPath))
     {
         Serial.println(
-            "StorageService: Could not remove stale "
-            "session temporary file");
+            "StorageService: Session save failed - "
+            "stale temporary file could not be removed");
         return false;
     }
 
@@ -516,6 +780,9 @@ bool StorageService::WriteMeasurementSession(
 
     if (!file)
     {
+        Serial.println(
+            "StorageService: Session save failed - "
+            "temporary file could not be created");
         return false;
     }
 
@@ -528,6 +795,18 @@ bool StorageService::WriteMeasurementSession(
     if (!written)
     {
         SD.remove(TemporarySessionPath);
+        Serial.println(
+            "StorageService: Session save failed - "
+            "record was not written completely");
+        return false;
+    }
+
+    if (!VerifyTemporarySession(session))
+    {
+        SD.remove(TemporarySessionPath);
+        Serial.println(
+            "StorageService: Session save failed - "
+            "temporary record verification failed");
         return false;
     }
 
@@ -541,6 +820,9 @@ bool StorageService::WriteMeasurementSession(
         !SD.remove(finalPath))
     {
         SD.remove(TemporarySessionPath);
+        Serial.println(
+            "StorageService: Session save failed - "
+            "existing destination could not be replaced");
         return false;
     }
 
@@ -549,13 +831,17 @@ bool StorageService::WriteMeasurementSession(
             finalPath))
     {
         SD.remove(TemporarySessionPath);
+        Serial.println(
+            "StorageService: Session save failed - "
+            "temporary record could not be finalized");
         return false;
     }
 
     return true;
 }
 
-bool StorageService::ReadMeasurementSession(
+StorageService::SessionReadResult
+StorageService::ReadMeasurementSession(
     uint32_t sessionId,
     StoredWiFiMeasurementSession &session)
 {
@@ -569,36 +855,102 @@ bool StorageService::ReadMeasurementSession(
 
     if (!file)
     {
-        return false;
+        return SessionReadResult::OpenFailed;
     }
 
-    const bool parsed =
+    const SessionReadResult result =
         ParseMeasurementSession(file, session);
 
     file.close();
 
-    return parsed &&
-        session.available &&
-        session.sessionId == sessionId &&
-        session.summary.available;
+    if (result != SessionReadResult::Success)
+    {
+        return result;
+    }
+
+    if (!session.available ||
+        session.sessionId != sessionId ||
+        !session.summary.available)
+    {
+        return SessionReadResult::SessionIdMismatch;
+    }
+
+    return SessionReadResult::Success;
 }
 
-bool StorageService::ParseMeasurementSession(
+StorageService::SessionReadResult
+StorageService::ParseMeasurementSession(
     fs::File &file,
     StoredWiFiMeasurementSession &session)
 {
     session = StoredWiFiMeasurementSession{};
 
     uint32_t version = 0;
+    uint32_t storedChecksum = 0;
+    uint32_t calculatedCrc = Crc32Initial;
+
     bool versionSeen = false;
+    bool checksumSeen = false;
     bool idSeen = false;
+    bool completedAtSeen = false;
     bool scansSeen = false;
+    bool networkCountSeen = false;
+    bool occupiedChannelsSeen = false;
     bool bestChannelSeen = false;
+    bool bestScoreSeen = false;
+    bool secondBestScoreSeen = false;
+    bool marginSeen = false;
+    bool comparableCountSeen = false;
+    bool historySamplesSeen = false;
+    bool confidenceSeen = false;
+    bool uniqueSeen = false;
+
+    bool candidateSeen[
+        WiFiMeasurementSummary::CandidateCapacity] = {};
+    bool channelSeen[
+        WiFiMeasurementSummary::ChannelCapacity] = {};
 
     while (file.available())
     {
-        String line = file.readStringUntil('\n');
+        const String rawLine =
+            file.readStringUntil('\n');
+
+        String line = rawLine;
         line.trim();
+
+        if (line.startsWith("checksum_crc32="))
+        {
+            if (checksumSeen ||
+                !ParseHexUnsigned(
+                    line.substring(15),
+                    storedChecksum))
+            {
+                return SessionReadResult::ParseFailed;
+            }
+
+            checksumSeen = true;
+            continue;
+        }
+
+        if (checksumSeen)
+        {
+            if (line.length() != 0)
+            {
+                return SessionReadResult::ParseFailed;
+            }
+
+            continue;
+        }
+
+        calculatedCrc = UpdateCrc32(
+            calculatedCrc,
+            rawLine);
+
+        const uint8_t newline = '\n';
+        calculatedCrc = UpdateCrc32(
+            calculatedCrc,
+            &newline,
+            1);
 
         if (line.length() == 0 ||
             line.startsWith("#"))
@@ -610,7 +962,7 @@ bool StorageService::ParseMeasurementSession(
 
         if (separator <= 0)
         {
-            continue;
+            return SessionReadResult::ParseFailed;
         }
 
         const String key =
@@ -622,111 +974,182 @@ bool StorageService::ParseMeasurementSession(
 
         if (key == "version")
         {
-            if (!ParseUnsigned(value, version))
-                return false;
+            if (versionSeen ||
+                !ParseUnsigned(value, version))
+            {
+                return SessionReadResult::ParseFailed;
+            }
             versionSeen = true;
         }
         else if (key == "session_id")
         {
-            if (!ParseUnsigned(value, session.sessionId))
-                return false;
+            if (idSeen ||
+                !ParseUnsigned(value, session.sessionId))
+            {
+                return SessionReadResult::ParseFailed;
+            }
             idSeen = true;
         }
         else if (key == "completed_at_ms")
         {
-            if (!ParseUnsigned(value, session.completedAtMs))
-                return false;
+            if (completedAtSeen ||
+                !ParseUnsigned(value, session.completedAtMs))
+            {
+                return SessionReadResult::ParseFailed;
+            }
+            completedAtSeen = true;
         }
         else if (key == "completed_scans")
         {
-            if (!ParseUnsigned(value, parsed) || parsed > 255)
-                return false;
+            if (scansSeen ||
+                !ParseUnsigned(value, parsed) ||
+                parsed > 255)
+            {
+                return SessionReadResult::ParseFailed;
+            }
             session.summary.completedScanCount =
                 static_cast<uint8_t>(parsed);
             scansSeen = true;
         }
         else if (key == "network_count")
         {
-            if (!ParseUnsigned(value, parsed) || parsed > 255)
-                return false;
+            if (networkCountSeen ||
+                !ParseUnsigned(value, parsed) ||
+                parsed > 255)
+            {
+                return SessionReadResult::ParseFailed;
+            }
             session.summary.networkCount =
                 static_cast<uint8_t>(parsed);
+            networkCountSeen = true;
         }
         else if (key == "occupied_channels")
         {
-            if (!ParseUnsigned(value, parsed) || parsed > 255)
-                return false;
+            if (occupiedChannelsSeen ||
+                !ParseUnsigned(value, parsed) ||
+                parsed > 255)
+            {
+                return SessionReadResult::ParseFailed;
+            }
             session.summary.occupiedChannelCount =
                 static_cast<uint8_t>(parsed);
+            occupiedChannelsSeen = true;
         }
         else if (key == "best_channel")
         {
-            if (!ParseUnsigned(value, parsed) || parsed > 255)
-                return false;
+            if (bestChannelSeen ||
+                !ParseUnsigned(value, parsed) ||
+                parsed > 255)
+            {
+                return SessionReadResult::ParseFailed;
+            }
             session.summary.recommendation.bestChannel =
                 static_cast<uint8_t>(parsed);
             bestChannelSeen = true;
         }
         else if (key == "best_score")
         {
-            if (!ParseUnsigned(value, parsed) || parsed > 65535)
-                return false;
+            if (bestScoreSeen ||
+                !ParseUnsigned(value, parsed) ||
+                parsed > 65535)
+            {
+                return SessionReadResult::ParseFailed;
+            }
             session.summary.recommendation.bestScore =
                 static_cast<uint16_t>(parsed);
+            bestScoreSeen = true;
         }
         else if (key == "second_best_score")
         {
-            if (!ParseUnsigned(value, parsed) || parsed > 65535)
-                return false;
+            if (secondBestScoreSeen ||
+                !ParseUnsigned(value, parsed) ||
+                parsed > 65535)
+            {
+                return SessionReadResult::ParseFailed;
+            }
             session.summary.recommendation.secondBestScore =
                 static_cast<uint16_t>(parsed);
+            secondBestScoreSeen = true;
         }
         else if (key == "score_margin")
         {
-            if (!ParseUnsigned(value, parsed) || parsed > 65535)
-                return false;
+            if (marginSeen ||
+                !ParseUnsigned(value, parsed) ||
+                parsed > 65535)
+            {
+                return SessionReadResult::ParseFailed;
+            }
             session.summary.recommendation.scoreMargin =
                 static_cast<uint16_t>(parsed);
+            marginSeen = true;
         }
         else if (key == "comparable_count")
         {
-            if (!ParseUnsigned(value, parsed) || parsed > 255)
-                return false;
+            if (comparableCountSeen ||
+                !ParseUnsigned(value, parsed) ||
+                parsed > 255)
+            {
+                return SessionReadResult::ParseFailed;
+            }
             session.summary.recommendation.comparableCount =
                 static_cast<uint8_t>(parsed);
+            comparableCountSeen = true;
         }
         else if (key == "history_samples")
         {
-            if (!ParseUnsigned(value, parsed) || parsed > 255)
-                return false;
+            if (historySamplesSeen ||
+                !ParseUnsigned(value, parsed) ||
+                parsed > 255)
+            {
+                return SessionReadResult::ParseFailed;
+            }
             session.summary.recommendation.historySampleCount =
                 static_cast<uint8_t>(parsed);
+            historySamplesSeen = true;
         }
         else if (key == "confidence")
         {
-            if (!ParseUnsigned(value, parsed) ||
+            if (confidenceSeen ||
+                !ParseUnsigned(value, parsed) ||
                 parsed > static_cast<uint32_t>(
                     WiFiRecommendationConfidence::High))
-                return false;
+            {
+                return SessionReadResult::ParseFailed;
+            }
             session.summary.recommendation.confidence =
                 static_cast<WiFiRecommendationConfidence>(parsed);
+            confidenceSeen = true;
         }
         else if (key == "unique")
         {
-            if (!ParseBoolean(
+            if (uniqueSeen ||
+                !ParseBoolean(
                     value,
                     session.summary.recommendation.unique))
-                return false;
+            {
+                return SessionReadResult::ParseFailed;
+            }
+            uniqueSeen = true;
         }
         else if (key.startsWith("candidate_"))
         {
-            const uint8_t index =
-                static_cast<uint8_t>(
-                    key.substring(10).toInt());
+            const long parsedIndex =
+                key.substring(10).toInt();
 
-            if (index >=
-                WiFiMeasurementSummary::CandidateCapacity)
-                continue;
+            if (parsedIndex < 0 ||
+                parsedIndex >=
+                    WiFiMeasurementSummary::CandidateCapacity)
+            {
+                return SessionReadResult::ParseFailed;
+            }
+
+            const uint8_t index =
+                static_cast<uint8_t>(parsedIndex);
+
+            if (candidateSeen[index])
+            {
+                return SessionReadResult::ParseFailed;
+            }
 
             unsigned int channel = 0;
             unsigned int latest = 0;
@@ -734,17 +1157,28 @@ bool StorageService::ParseMeasurementSession(
             unsigned int congestion = 0;
             unsigned int recommended = 0;
             unsigned int comparable = 0;
+            char trailing = '\0';
 
             if (std::sscanf(
                     value.c_str(),
-                    "%u,%u,%u,%u,%u,%u",
+                    "%u,%u,%u,%u,%u,%u%c",
                     &channel,
                     &latest,
                     &average,
                     &congestion,
                     &recommended,
-                    &comparable) != 6)
-                return false;
+                    &comparable,
+                    &trailing) != 6 ||
+                channel > 255 ||
+                latest > 65535 ||
+                average > 65535 ||
+                congestion > static_cast<unsigned int>(
+                    WiFiCongestionLevel::Excellent) ||
+                recommended > 1 ||
+                comparable > 1)
+            {
+                return SessionReadResult::ParseFailed;
+            }
 
             WiFiChannelAssessment &assessment =
                 session.summary.candidates[index];
@@ -758,30 +1192,51 @@ bool StorageService::ParseMeasurementSession(
                 static_cast<WiFiCongestionLevel>(congestion);
             assessment.recommended = recommended != 0;
             assessment.comparable = comparable != 0;
+            candidateSeen[index] = true;
         }
         else if (key.startsWith("channel_"))
         {
-            const uint8_t channelIndex =
-                static_cast<uint8_t>(
-                    key.substring(8).toInt());
+            const long parsedIndex =
+                key.substring(8).toInt();
 
-            if (channelIndex >=
-                WiFiMeasurementSummary::ChannelCapacity)
-                continue;
+            if (parsedIndex < 0 ||
+                parsedIndex >=
+                    WiFiMeasurementSummary::ChannelCapacity)
+            {
+                return SessionReadResult::ParseFailed;
+            }
+
+            const uint8_t channelIndex =
+                static_cast<uint8_t>(parsedIndex);
+
+            if (channelSeen[channelIndex])
+            {
+                return SessionReadResult::ParseFailed;
+            }
 
             unsigned int channel = 0;
             unsigned int count = 0;
             long strongest = -127;
             long average = -127;
+            char trailing = '\0';
 
             if (std::sscanf(
                     value.c_str(),
-                    "%u,%u,%ld,%ld",
+                    "%u,%u,%ld,%ld%c",
                     &channel,
                     &count,
                     &strongest,
-                    &average) != 4)
-                return false;
+                    &average,
+                    &trailing) != 4 ||
+                channel > 255 ||
+                count > 255 ||
+                strongest < -127 ||
+                strongest > 0 ||
+                average < -127 ||
+                average > 0)
+            {
+                return SessionReadResult::ParseFailed;
+            }
 
             WiFiChannelInfo &info =
                 session.summary.channels[channelIndex];
@@ -793,18 +1248,132 @@ bool StorageService::ParseMeasurementSession(
                 static_cast<int32_t>(strongest);
             info.averageRssi =
                 static_cast<int32_t>(average);
+            channelSeen[channelIndex] = true;
         }
+        // Unknown fields are tolerated to preserve forward
+        // compatibility within a supported format version.
     }
 
-    if (!versionSeen || version != 1 ||
-        !idSeen || !scansSeen ||
-        !bestChannelSeen)
+    if (!versionSeen)
     {
-        return false;
+        return SessionReadResult::IncompleteRecord;
+    }
+
+    if (version != 1 &&
+        version != CurrentSessionFormatVersion)
+    {
+        return SessionReadResult::UnsupportedVersion;
+    }
+
+    bool complete =
+        idSeen &&
+        completedAtSeen &&
+        scansSeen &&
+        networkCountSeen &&
+        occupiedChannelsSeen &&
+        bestChannelSeen &&
+        bestScoreSeen &&
+        secondBestScoreSeen &&
+        marginSeen &&
+        comparableCountSeen &&
+        historySamplesSeen &&
+        confidenceSeen &&
+        uniqueSeen;
+
+    for (uint8_t index = 0;
+         index <
+             WiFiMeasurementSummary::CandidateCapacity;
+         ++index)
+    {
+        complete = complete && candidateSeen[index];
+    }
+
+    for (uint8_t index = 0;
+         index <
+             WiFiMeasurementSummary::ChannelCapacity;
+         ++index)
+    {
+        complete = complete && channelSeen[index];
+    }
+
+    if (!complete)
+    {
+        return SessionReadResult::IncompleteRecord;
+    }
+
+    session.formatVersion =
+        static_cast<uint8_t>(version);
+
+    if (version == CurrentSessionFormatVersion)
+    {
+        if (!checksumSeen)
+        {
+            return SessionReadResult::ChecksumMissing;
+        }
+
+        calculatedCrc ^= 0xFFFFFFFFUL;
+
+        if (calculatedCrc != storedChecksum)
+        {
+            return SessionReadResult::ChecksumMismatch;
+        }
+
+        session.integrityVerified = true;
+    }
+    else
+    {
+        session.integrityVerified = false;
     }
 
     session.available = true;
     session.summary.available = true;
+    return SessionReadResult::Success;
+}
+
+bool StorageService::VerifyTemporarySession(
+    const StoredWiFiMeasurementSession &expected)
+{
+    File file =
+        SD.open(TemporarySessionPath, FILE_READ);
+
+    if (!file)
+    {
+        Serial.println(
+            "StorageService: Temporary verification "
+            "failed - file could not be reopened");
+        return false;
+    }
+
+    StoredWiFiMeasurementSession verified{};
+    const SessionReadResult result =
+        ParseMeasurementSession(file, verified);
+
+    file.close();
+
+    if (result != SessionReadResult::Success)
+    {
+        Serial.printf(
+            "StorageService: Temporary verification "
+            "failed - %s\n",
+            GetSessionReadResultText(result));
+        return false;
+    }
+
+    if (verified.sessionId != expected.sessionId ||
+        verified.completedAtMs != expected.completedAtMs ||
+        !verified.integrityVerified)
+    {
+        Serial.println(
+            "StorageService: Temporary verification "
+            "failed - record identity mismatch");
+        return false;
+    }
+
+    Serial.printf(
+        "StorageService: Session %lu temporary "
+        "record verified (CRC32 valid)\n",
+        static_cast<unsigned long>(expected.sessionId));
+
     return true;
 }
 
@@ -815,47 +1384,79 @@ bool StorageService::WriteSummaryFields(
     const WiFiMeasurementSummary &summary =
         session.summary;
 
-    if (!file.printf("version=1\n") ||
-        !file.printf(
+    uint32_t crc = Crc32Initial;
+
+    if (!WriteCrcLine(
+            file,
+            crc,
+            "version=%u\n",
+            CurrentSessionFormatVersion) ||
+        !WriteCrcLine(
+            file,
+            crc,
             "session_id=%lu\n",
             static_cast<unsigned long>(
                 session.sessionId)) ||
-        !file.printf(
+        !WriteCrcLine(
+            file,
+            crc,
             "completed_at_ms=%lu\n",
             static_cast<unsigned long>(
                 session.completedAtMs)) ||
-        !file.printf(
+        !WriteCrcLine(
+            file,
+            crc,
             "completed_scans=%u\n",
             summary.completedScanCount) ||
-        !file.printf(
+        !WriteCrcLine(
+            file,
+            crc,
             "network_count=%u\n",
             summary.networkCount) ||
-        !file.printf(
+        !WriteCrcLine(
+            file,
+            crc,
             "occupied_channels=%u\n",
             summary.occupiedChannelCount) ||
-        !file.printf(
+        !WriteCrcLine(
+            file,
+            crc,
             "best_channel=%u\n",
             summary.recommendation.bestChannel) ||
-        !file.printf(
+        !WriteCrcLine(
+            file,
+            crc,
             "best_score=%u\n",
             summary.recommendation.bestScore) ||
-        !file.printf(
+        !WriteCrcLine(
+            file,
+            crc,
             "second_best_score=%u\n",
             summary.recommendation.secondBestScore) ||
-        !file.printf(
+        !WriteCrcLine(
+            file,
+            crc,
             "score_margin=%u\n",
             summary.recommendation.scoreMargin) ||
-        !file.printf(
+        !WriteCrcLine(
+            file,
+            crc,
             "comparable_count=%u\n",
             summary.recommendation.comparableCount) ||
-        !file.printf(
+        !WriteCrcLine(
+            file,
+            crc,
             "history_samples=%u\n",
             summary.recommendation.historySampleCount) ||
-        !file.printf(
+        !WriteCrcLine(
+            file,
+            crc,
             "confidence=%u\n",
             static_cast<unsigned int>(
                 summary.recommendation.confidence)) ||
-        !file.printf(
+        !WriteCrcLine(
+            file,
+            crc,
             "unique=%u\n",
             summary.recommendation.unique ? 1 : 0))
     {
@@ -870,7 +1471,9 @@ bool StorageService::WriteSummaryFields(
         const WiFiChannelAssessment &assessment =
             summary.candidates[index];
 
-        if (!file.printf(
+        if (!WriteCrcLine(
+                file,
+                crc,
                 "candidate_%u=%u,%u,%u,%u,%u,%u\n",
                 index,
                 assessment.channel,
@@ -893,7 +1496,9 @@ bool StorageService::WriteSummaryFields(
         const WiFiChannelInfo &info =
             summary.channels[channel];
 
-        if (!file.printf(
+        if (!WriteCrcLine(
+                file,
+                crc,
                 "channel_%u=%u,%u,%ld,%ld\n",
                 channel,
                 info.channel,
@@ -907,40 +1512,54 @@ bool StorageService::WriteSummaryFields(
         }
     }
 
-    return true;
+    const uint32_t finalCrc =
+        crc ^ 0xFFFFFFFFUL;
+
+    return file.printf(
+        "checksum_crc32=%08lX\n",
+        static_cast<unsigned long>(finalCrc)) > 0;
+}
+
+const char *StorageService::GetSessionReadResultText(
+    SessionReadResult result)
+{
+    switch (result)
+    {
+        case SessionReadResult::Success:
+            return "verified";
+        case SessionReadResult::OpenFailed:
+            return "file open failed";
+        case SessionReadResult::ParseFailed:
+            return "malformed record";
+        case SessionReadResult::UnsupportedVersion:
+            return "unsupported format version";
+        case SessionReadResult::ChecksumMissing:
+            return "checksum missing";
+        case SessionReadResult::ChecksumMismatch:
+            return "CRC32 mismatch";
+        case SessionReadResult::SessionIdMismatch:
+            return "session ID does not match filename";
+        case SessionReadResult::IncompleteRecord:
+            return "required fields missing";
+        default:
+            return "unknown read error";
+    }
 }
 
 uint32_t StorageService::ExtractSessionId(
     const char *path)
 {
-    if (path == nullptr)
+    uint32_t sessionId = 0;
+
+    if (!TryExtractSessionFileId(
+            path,
+            ".txt",
+            sessionId))
     {
         return 0;
     }
 
-    const char *name =
-        std::strrchr(path, '/');
-
-    name = name == nullptr ? path : name + 1;
-
-    unsigned long sessionId = 0;
-    char trailing = '\0';
-
-    if (std::sscanf(
-            name,
-            "session_%lu.txt%c",
-            &sessionId,
-            &trailing) != 1)
-    {
-        return 0;
-    }
-
-    if (sessionId == 0)
-    {
-        return 0;
-    }
-
-    return static_cast<uint32_t>(sessionId);
+    return sessionId;
 }
 
 void StorageService::BuildSessionPath(
@@ -1003,6 +1622,58 @@ void StorageService::RemoveSessionFile(
             "remove old session %lu\n",
             static_cast<unsigned long>(sessionId));
     }
+}
+
+void StorageService::QuarantineSessionFile(
+    uint32_t sessionId,
+    SessionReadResult result)
+{
+    if (result == SessionReadResult::OpenFailed ||
+        result == SessionReadResult::UnsupportedVersion)
+    {
+        return;
+    }
+
+    char sourcePath[64];
+    BuildSessionPath(
+        sessionId,
+        sourcePath,
+        sizeof(sourcePath));
+
+    char quarantinePath[72];
+    std::snprintf(
+        quarantinePath,
+        sizeof(quarantinePath),
+        "%s/session_%06lu.bad",
+        SessionsDirectory,
+        static_cast<unsigned long>(sessionId));
+
+    if (SD.exists(quarantinePath) &&
+        !SD.remove(quarantinePath))
+    {
+        Serial.printf(
+            "StorageService: Warning - session %lu "
+            "could not be quarantined; old .bad file "
+            "could not be replaced\n",
+            static_cast<unsigned long>(sessionId));
+        return;
+    }
+
+    if (!SD.rename(
+            sourcePath,
+            quarantinePath))
+    {
+        Serial.printf(
+            "StorageService: Warning - session %lu "
+            "could not be quarantined\n",
+            static_cast<unsigned long>(sessionId));
+        return;
+    }
+
+    Serial.printf(
+        "StorageService: Session %lu moved to .bad "
+        "quarantine\n",
+        static_cast<unsigned long>(sessionId));
 }
 
 bool StorageService::IsSessionIdKept(

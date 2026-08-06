@@ -10,6 +10,93 @@
 
 ScanScreen *ScanScreen::instance = nullptr;
 
+namespace
+{
+void ConfigureControlButton(lv_obj_t *button)
+{
+    if (button == nullptr)
+    {
+        return;
+    }
+
+    lv_obj_set_style_bg_color(
+        button,
+        Theme::Control(),
+        LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    lv_obj_set_style_bg_opa(
+        button,
+        LV_OPA_COVER,
+        LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    lv_obj_set_style_bg_color(
+        button,
+        Theme::ControlPressed(),
+        LV_PART_MAIN | LV_STATE_PRESSED);
+
+    lv_obj_set_style_bg_opa(
+        button,
+        LV_OPA_COVER,
+        LV_PART_MAIN | LV_STATE_PRESSED);
+
+    lv_obj_set_style_bg_color(
+        button,
+        Theme::ControlDisabled(),
+        LV_PART_MAIN | LV_STATE_DISABLED);
+
+    lv_obj_set_style_bg_opa(
+        button,
+        LV_OPA_COVER,
+        LV_PART_MAIN | LV_STATE_DISABLED);
+
+    lv_obj_set_style_opa(
+        button,
+        LV_OPA_60,
+        LV_PART_MAIN | LV_STATE_DISABLED);
+
+    lv_obj_set_style_border_width(
+        button,
+        0,
+        LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    lv_obj_set_style_border_color(
+        button,
+        Theme::ControlSelected(),
+        LV_PART_MAIN | LV_STATE_DEFAULT);
+}
+
+void ConfigureControlLabel(lv_obj_t *label)
+{
+    if (label == nullptr)
+    {
+        return;
+    }
+
+    lv_obj_set_style_text_color(
+        label,
+        Theme::ControlText(),
+        0);
+}
+
+void SetControlSelected(lv_obj_t *button, bool selected)
+{
+    if (button == nullptr)
+    {
+        return;
+    }
+
+    lv_obj_set_style_border_width(
+        button,
+        selected ? 2 : 0,
+        LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    lv_obj_set_style_border_opa(
+        button,
+        selected ? LV_OPA_COVER : LV_OPA_TRANSP,
+        LV_PART_MAIN | LV_STATE_DEFAULT);
+}
+}
+
 void ScanScreen::Begin()
 {
     instance = this;
@@ -112,6 +199,8 @@ void ScanScreen::CreateContent()
     networksButton =
         lv_btn_create(header);
 
+    ConfigureControlButton(networksButton);
+
     lv_obj_set_size(
         networksButton,
         88,
@@ -130,15 +219,14 @@ void ScanScreen::CreateContent()
         networksLabel,
         "Networks");
 
-    lv_obj_set_style_text_color(
-        networksLabel,
-        Theme::Text(),
-        0);
+    ConfigureControlLabel(networksLabel);
 
     lv_obj_center(networksLabel);
 
     channelsButton =
         lv_btn_create(header);
+
+    ConfigureControlButton(channelsButton);
 
     lv_obj_set_size(
         channelsButton,
@@ -158,10 +246,7 @@ void ScanScreen::CreateContent()
         channelsLabel,
         "Channels");
 
-    lv_obj_set_style_text_color(
-        channelsLabel,
-        Theme::Text(),
-        0);
+    ConfigureControlLabel(channelsLabel);
 
     lv_obj_center(channelsLabel);
 
@@ -191,25 +276,12 @@ void ScanScreen::CreateContent()
     historyButton =
         lv_btn_create(header);
 
+    ConfigureControlButton(historyButton);
+
     lv_obj_set_size(
         historyButton,
         64,
         28);
-
-    lv_obj_set_style_bg_color(
-        historyButton,
-        Theme::Muted(),
-        0);
-
-    lv_obj_set_style_bg_opa(
-        historyButton,
-        LV_OPA_50,
-        0);
-
-    lv_obj_set_style_opa(
-        historyButton,
-        LV_OPA_30,
-        LV_PART_MAIN | LV_STATE_DISABLED);
 
     lv_obj_add_event_cb(
         historyButton,
@@ -224,10 +296,7 @@ void ScanScreen::CreateContent()
         historyButtonLabel,
         "History");
 
-    lv_obj_set_style_text_color(
-        historyButtonLabel,
-        Theme::Text(),
-        0);
+    ConfigureControlLabel(historyButtonLabel);
 
     lv_obj_center(historyButtonLabel);
 
@@ -238,25 +307,12 @@ void ScanScreen::CreateContent()
     newSessionButton =
         lv_btn_create(header);
 
+    ConfigureControlButton(newSessionButton);
+
     lv_obj_set_size(
         newSessionButton,
         62,
         28);
-
-    lv_obj_set_style_bg_color(
-        newSessionButton,
-        Theme::Muted(),
-        0);
-
-    lv_obj_set_style_bg_opa(
-        newSessionButton,
-        LV_OPA_50,
-        0);
-
-    lv_obj_set_style_opa(
-        newSessionButton,
-        LV_OPA_30,
-        LV_PART_MAIN | LV_STATE_DISABLED);
 
     lv_obj_add_event_cb(
         newSessionButton,
@@ -271,35 +327,19 @@ void ScanScreen::CreateContent()
         newSessionButtonLabel,
         "New");
 
-    lv_obj_set_style_text_color(
-        newSessionButtonLabel,
-        Theme::Text(),
-        0);
+    ConfigureControlLabel(newSessionButtonLabel);
 
     lv_obj_center(newSessionButtonLabel);
 
     scanButton =
         lv_btn_create(header);
 
+    ConfigureControlButton(scanButton);
+
     lv_obj_set_size(
         scanButton,
         72,
         28);
-
-    lv_obj_set_style_bg_color(
-        scanButton,
-        Theme::Accent(),
-        0);
-
-    lv_obj_set_style_bg_opa(
-        scanButton,
-        LV_OPA_COVER,
-        0);
-
-    lv_obj_set_style_opa(
-        scanButton,
-        LV_OPA_50,
-        LV_PART_MAIN | LV_STATE_DISABLED);
 
     lv_obj_add_event_cb(
         scanButton,
@@ -314,10 +354,7 @@ void ScanScreen::CreateContent()
         scanButtonLabel,
         "Scan");
 
-    lv_obj_set_style_text_color(
-        scanButtonLabel,
-        Theme::Text(),
-        0);
+    ConfigureControlLabel(scanButtonLabel);
 
     lv_obj_center(scanButtonLabel);
 
@@ -696,16 +733,6 @@ void ScanScreen::UpdateNewSessionButton(
             newSessionButtonLabel,
             "Cancel");
 
-        lv_obj_set_style_bg_color(
-            newSessionButton,
-            Theme::Accent(),
-            0);
-
-        lv_obj_set_style_bg_opa(
-            newSessionButton,
-            LV_OPA_COVER,
-            0);
-
         return;
     }
 
@@ -726,16 +753,6 @@ void ScanScreen::UpdateNewSessionButton(
     lv_label_set_text(
         newSessionButtonLabel,
         "New");
-
-    lv_obj_set_style_bg_color(
-        newSessionButton,
-        Theme::Muted(),
-        0);
-
-    lv_obj_set_style_bg_opa(
-        newSessionButton,
-        LV_OPA_50,
-        0);
 
     if (state == WiFiScanState::Scanning)
     {
@@ -763,33 +780,16 @@ void ScanScreen::UpdateViewButtons()
         activeView ==
         WiFiScanView::Networks;
 
-    lv_obj_set_style_bg_color(
+    // Both view controls remain visibly enabled. The active view is
+    // identified by a light-teal border rather than by changing the
+    // inactive control to a disabled-looking grey.
+    SetControlSelected(
         networksButton,
-        showingNetworks
-            ? Theme::Accent()
-            : Theme::Muted(),
-        0);
+        showingNetworks);
 
-    lv_obj_set_style_bg_opa(
-        networksButton,
-        showingNetworks
-            ? LV_OPA_COVER
-            : LV_OPA_30,
-        0);
-
-    lv_obj_set_style_bg_color(
+    SetControlSelected(
         channelsButton,
-        showingNetworks
-            ? Theme::Muted()
-            : Theme::Accent(),
-        0);
-
-    lv_obj_set_style_bg_opa(
-        channelsButton,
-        showingNetworks
-            ? LV_OPA_30
-            : LV_OPA_COVER,
-        0);
+        !showingNetworks);
 }
 
 void ScanScreen::UpdateHistoryControls()
@@ -813,12 +813,14 @@ void ScanScreen::UpdateHistoryControls()
         WiFiService::
             IsAutomaticMeasurementSessionActive();
 
-    if (activeView != WiFiScanView::Channels ||
-        savedCount == 0 ||
-        measurementActive)
+    if (savedCount == 0)
     {
         reviewingSavedSession = false;
         selectedSavedSessionIndex = 0;
+
+        SetControlSelected(
+            historyButton,
+            false);
 
         lv_obj_add_flag(
             historyButton,
@@ -826,6 +828,9 @@ void ScanScreen::UpdateHistoryControls()
         return;
     }
 
+    // Saved history is a persistent capability and should be visible
+    // immediately after it is restored from the SD card. It is no
+    // longer tied to the Channels view or to completion of a new scan.
     lv_obj_clear_flag(
         historyButton,
         LV_OBJ_FLAG_HIDDEN);
@@ -842,18 +847,32 @@ void ScanScreen::UpdateHistoryControls()
             historyButtonLabel,
             "History");
 
-        lv_obj_set_style_bg_color(
+        SetControlSelected(
             historyButton,
-            Theme::Muted(),
-            0);
+            false);
 
-        lv_obj_set_style_bg_opa(
-            historyButton,
-            LV_OPA_50,
-            0);
+        if (measurementActive)
+        {
+            lv_obj_add_state(
+                historyButton,
+                LV_STATE_DISABLED);
+        }
+        else
+        {
+            lv_obj_clear_state(
+                historyButton,
+                LV_STATE_DISABLED);
+        }
 
         return;
     }
+
+    // History review always uses the Channels presentation.
+    activeView = WiFiScanView::Channels;
+
+    lv_obj_clear_state(
+        historyButton,
+        LV_STATE_DISABLED);
 
     // In history mode, the normal New and Scan buttons become
     // Older and Newer. This preserves all vertical result space.
@@ -861,15 +880,9 @@ void ScanScreen::UpdateHistoryControls()
         historyButtonLabel,
         "Live");
 
-    lv_obj_set_style_bg_color(
+    SetControlSelected(
         historyButton,
-        Theme::Accent(),
-        0);
-
-    lv_obj_set_style_bg_opa(
-        historyButton,
-        LV_OPA_COVER,
-        0);
+        true);
 
     lv_label_set_text(
         newSessionButtonLabel,
@@ -878,16 +891,6 @@ void ScanScreen::UpdateHistoryControls()
     lv_label_set_text(
         scanButtonLabel,
         "Newer");
-
-    lv_obj_set_style_bg_color(
-        newSessionButton,
-        Theme::Muted(),
-        0);
-
-    lv_obj_set_style_bg_opa(
-        newSessionButton,
-        LV_OPA_50,
-        0);
 
     if (selectedSavedSessionIndex + 1 < savedCount)
     {

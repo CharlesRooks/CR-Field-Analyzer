@@ -22,6 +22,31 @@ namespace Theme
         return lv_palette_main(LV_PALETTE_GREY);
     }
 
+    lv_color_t Control()
+    {
+        return lv_color_hex(0x2F6F73);
+    }
+
+    lv_color_t ControlPressed()
+    {
+        return lv_color_hex(0x25585B);
+    }
+
+    lv_color_t ControlSelected()
+    {
+        return lv_color_hex(0x82C4C0);
+    }
+
+    lv_color_t ControlDisabled()
+    {
+        return lv_color_hex(0x343A40);
+    }
+
+    lv_color_t ControlText()
+    {
+        return lv_color_hex(0xF2F5F5);
+    }
+
     void PrepareScreen()
     {
         lv_obj_clean(lv_scr_act());

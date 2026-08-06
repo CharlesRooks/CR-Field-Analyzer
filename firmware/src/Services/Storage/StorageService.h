@@ -55,7 +55,20 @@ public:
         GetSavedSession(uint8_t index);
 
 private:
-    static constexpr uint8_t EnumeratedSessionCapacity = 24;
+    static constexpr uint8_t CurrentSessionFormatVersion = 2;
+    static constexpr uint8_t EnumeratedSessionCapacity = 64;
+
+    enum class SessionReadResult : uint8_t
+    {
+        Success = 0,
+        OpenFailed,
+        ParseFailed,
+        UnsupportedVersion,
+        ChecksumMissing,
+        ChecksumMismatch,
+        SessionIdMismatch,
+        IncompleteRecord
+    };
 
     static bool available;
     static uint8_t detectedCardType;
@@ -71,22 +84,29 @@ private:
     static uint32_t nextSessionId;
 
     static bool EnsureDirectories();
+    static bool CleanupStaleTemporaryFile();
     static void LoadMeasurementSessions();
 
     static bool WriteMeasurementSession(
         const StoredWiFiMeasurementSession &session);
 
-    static bool ReadMeasurementSession(
+    static SessionReadResult ReadMeasurementSession(
         uint32_t sessionId,
         StoredWiFiMeasurementSession &session);
 
-    static bool ParseMeasurementSession(
+    static SessionReadResult ParseMeasurementSession(
         fs::File &file,
         StoredWiFiMeasurementSession &session);
+
+    static bool VerifyTemporarySession(
+        const StoredWiFiMeasurementSession &expected);
 
     static bool WriteSummaryFields(
         fs::File &file,
         const StoredWiFiMeasurementSession &session);
+
+    static const char *GetSessionReadResultText(
+        SessionReadResult result);
 
     static uint32_t ExtractSessionId(
         const char *path);
@@ -101,6 +121,10 @@ private:
 
     static void RemoveSessionFile(
         uint32_t sessionId);
+
+    static void QuarantineSessionFile(
+        uint32_t sessionId,
+        SessionReadResult result);
 
     static bool IsSessionIdKept(
         uint32_t sessionId,
