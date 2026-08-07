@@ -14,6 +14,7 @@
 #include "../Managers/PowerManager.h"
 #include "../Services/WiFi/WiFiService.h"
 #include "../Services/Storage/StorageService.h"
+#include "../Services/Time/TimeService.h"
 
 
 static LilyGo_Class amoled;
@@ -77,6 +78,7 @@ void SentinelOS::Begin()
         }
     }
 
+    TimeService::Begin();
     StorageService::Begin();
 
     beginLvglHelper(amoled);
