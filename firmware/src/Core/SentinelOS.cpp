@@ -162,9 +162,24 @@ void SentinelOS::Update()
                 const WiFiMeasurementSummary &summary =
                     WiFiService::GetMeasurementSummary();
 
+                char capturedLocal[32] = {};
+
+                const bool capturedTimeValid =
+                    pendingMeasurementCapturedEpoch != 0 &&
+                    TimeService::FormatEpochIsoLocal(
+                        pendingMeasurementCapturedEpoch,
+                        capturedLocal,
+                        sizeof(capturedLocal));
+
                 if (!StorageService::SaveMeasurementSummary(
                         summary,
-                        pendingMeasurementCompletedAtMs))
+                        pendingMeasurementCompletedAtMs,
+                        capturedTimeValid
+                            ? pendingMeasurementCapturedEpoch
+                            : 0,
+                        capturedTimeValid
+                            ? capturedLocal
+                            : nullptr))
                 {
                     Serial.println(
                         "SentinelOS: Completed measurement "
@@ -173,6 +188,7 @@ void SentinelOS::Update()
 
                 measurementSavePending = false;
                 pendingMeasurementCompletedAtMs = 0;
+                pendingMeasurementCapturedEpoch = 0;
             }
 
             PowerManager::Update();
@@ -235,10 +251,19 @@ void SentinelOS::HandleMessage(const Message &message)
 
         case MessageType::WiFiMeasurementSessionCompleted:
             // Keep the synchronous MessageBus handler short.
-            // The SD write is deferred to the main update loop.
+            // The SD write is deferred to the main update loop, while
+            // the wall-clock timestamp is captured at completion.
             instance->measurementSavePending = true;
             instance->pendingMeasurementCompletedAtMs =
                 message.timestampMs;
+
+            if (!TimeService::GetEpochTime(
+                    instance->
+                        pendingMeasurementCapturedEpoch))
+            {
+                instance->
+                    pendingMeasurementCapturedEpoch = 0;
+            }
             break;
 
         default:

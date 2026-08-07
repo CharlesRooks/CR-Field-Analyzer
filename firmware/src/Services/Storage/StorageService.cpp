@@ -441,7 +441,9 @@ uint64_t StorageService::GetFilesystemFreeBytes()
 
 bool StorageService::SaveMeasurementSummary(
     const WiFiMeasurementSummary &summary,
-    uint32_t completedAtMs)
+    uint32_t completedAtMs,
+    uint32_t capturedEpoch,
+    const char *capturedLocal)
 {
     if (!available || !summary.available)
     {
@@ -465,6 +467,40 @@ bool StorageService::SaveMeasurementSummary(
         CurrentSessionFormatVersion;
     session.integrityVerified = true;
     session.sessionId = nextSessionId;
+    session.capturedTimeValid =
+        capturedEpoch != 0 &&
+        capturedLocal != nullptr &&
+        capturedLocal[0] != '\0';
+    session.capturedEpoch =
+        session.capturedTimeValid
+            ? capturedEpoch
+            : 0;
+
+    if (session.capturedTimeValid)
+    {
+        std::strncpy(
+            session.capturedLocal,
+            capturedLocal,
+            StoredWiFiMeasurementSession::
+                CapturedLocalCapacity - 1);
+
+        session.capturedLocal[
+            StoredWiFiMeasurementSession::
+                CapturedLocalCapacity - 1] = '\0';
+    }
+    else
+    {
+        std::strncpy(
+            session.capturedLocal,
+            "unavailable",
+            StoredWiFiMeasurementSession::
+                CapturedLocalCapacity - 1);
+
+        session.capturedLocal[
+            StoredWiFiMeasurementSession::
+                CapturedLocalCapacity - 1] = '\0';
+    }
+
     session.completedAtMs = completedAtMs;
     session.summary = summary;
 
@@ -503,6 +539,23 @@ bool StorageService::SaveMeasurementSummary(
     }
 
     filesystemUsedBytes = SD.usedBytes();
+
+    if (session.capturedTimeValid)
+    {
+        Serial.printf(
+            "StorageService: Session %lu captured %s\n",
+            static_cast<unsigned long>(
+                session.sessionId),
+            session.capturedLocal);
+    }
+    else
+    {
+        Serial.printf(
+            "StorageService: Session %lu capture time "
+            "unavailable\n",
+            static_cast<unsigned long>(
+                session.sessionId));
+    }
 
     Serial.printf(
         "StorageService: Session %lu saved, "
@@ -892,6 +945,9 @@ StorageService::ParseMeasurementSession(
     bool versionSeen = false;
     bool checksumSeen = false;
     bool idSeen = false;
+    bool capturedTimeValidSeen = false;
+    bool capturedEpochSeen = false;
+    bool capturedLocalSeen = false;
     bool completedAtSeen = false;
     bool scansSeen = false;
     bool networkCountSeen = false;
@@ -989,6 +1045,51 @@ StorageService::ParseMeasurementSession(
                 return SessionReadResult::ParseFailed;
             }
             idSeen = true;
+        }
+        else if (key == "capture_time_valid")
+        {
+            if (capturedTimeValidSeen ||
+                !ParseBoolean(
+                    value,
+                    session.capturedTimeValid))
+            {
+                return SessionReadResult::ParseFailed;
+            }
+            capturedTimeValidSeen = true;
+        }
+        else if (key == "captured_epoch")
+        {
+            if (capturedEpochSeen ||
+                !ParseUnsigned(
+                    value,
+                    session.capturedEpoch))
+            {
+                return SessionReadResult::ParseFailed;
+            }
+            capturedEpochSeen = true;
+        }
+        else if (key == "captured_local")
+        {
+            if (capturedLocalSeen ||
+                value.length() == 0 ||
+                value.length() >=
+                    StoredWiFiMeasurementSession::
+                        CapturedLocalCapacity)
+            {
+                return SessionReadResult::ParseFailed;
+            }
+
+            std::strncpy(
+                session.capturedLocal,
+                value.c_str(),
+                StoredWiFiMeasurementSession::
+                    CapturedLocalCapacity - 1);
+
+            session.capturedLocal[
+                StoredWiFiMeasurementSession::
+                    CapturedLocalCapacity - 1] = '\0';
+
+            capturedLocalSeen = true;
         }
         else if (key == "completed_at_ms")
         {
@@ -1260,6 +1361,7 @@ StorageService::ParseMeasurementSession(
     }
 
     if (version != 1 &&
+        version != 2 &&
         version != CurrentSessionFormatVersion)
     {
         return SessionReadResult::UnsupportedVersion;
@@ -1279,6 +1381,37 @@ StorageService::ParseMeasurementSession(
         historySamplesSeen &&
         confidenceSeen &&
         uniqueSeen;
+
+    if (version >= 3)
+    {
+        complete =
+            complete &&
+            capturedTimeValidSeen &&
+            capturedEpochSeen &&
+            capturedLocalSeen;
+
+        if (complete &&
+            session.capturedTimeValid)
+        {
+            complete =
+                session.capturedEpoch != 0 &&
+                session.capturedLocal[0] != '\0' &&
+                std::strcmp(
+                    session.capturedLocal,
+                    "unavailable") != 0;
+        }
+        else if (complete)
+        {
+            complete =
+                session.capturedEpoch == 0;
+        }
+    }
+    else
+    {
+        session.capturedTimeValid = false;
+        session.capturedEpoch = 0;
+        session.capturedLocal[0] = '\0';
+    }
 
     for (uint8_t index = 0;
          index <
@@ -1304,7 +1437,7 @@ StorageService::ParseMeasurementSession(
     session.formatVersion =
         static_cast<uint8_t>(version);
 
-    if (version == CurrentSessionFormatVersion)
+    if (version >= 2)
     {
         if (!checksumSeen)
         {
@@ -1361,6 +1494,13 @@ bool StorageService::VerifyTemporarySession(
 
     if (verified.sessionId != expected.sessionId ||
         verified.completedAtMs != expected.completedAtMs ||
+        verified.capturedTimeValid !=
+            expected.capturedTimeValid ||
+        verified.capturedEpoch !=
+            expected.capturedEpoch ||
+        std::strcmp(
+            verified.capturedLocal,
+            expected.capturedLocal) != 0 ||
         !verified.integrityVerified)
     {
         Serial.println(
@@ -1397,6 +1537,24 @@ bool StorageService::WriteSummaryFields(
             "session_id=%lu\n",
             static_cast<unsigned long>(
                 session.sessionId)) ||
+        !WriteCrcLine(
+            file,
+            crc,
+            "capture_time_valid=%u\n",
+            session.capturedTimeValid ? 1 : 0) ||
+        !WriteCrcLine(
+            file,
+            crc,
+            "captured_epoch=%lu\n",
+            static_cast<unsigned long>(
+                session.capturedEpoch)) ||
+        !WriteCrcLine(
+            file,
+            crc,
+            "captured_local=%s\n",
+            session.capturedTimeValid
+                ? session.capturedLocal
+                : "unavailable") ||
         !WriteCrcLine(
             file,
             crc,

@@ -46,7 +46,9 @@ public:
 
     static bool SaveMeasurementSummary(
         const WiFiMeasurementSummary &summary,
-        uint32_t completedAtMs);
+        uint32_t completedAtMs,
+        uint32_t capturedEpoch,
+        const char *capturedLocal);
 
     // Saved sessions are exposed newest first.
     static uint8_t GetSavedSessionCount();
@@ -55,7 +57,7 @@ public:
         GetSavedSession(uint8_t index);
 
 private:
-    static constexpr uint8_t CurrentSessionFormatVersion = 2;
+    static constexpr uint8_t CurrentSessionFormatVersion = 3;
     static constexpr uint8_t EnumeratedSessionCapacity = 64;
 
     enum class SessionReadResult : uint8_t

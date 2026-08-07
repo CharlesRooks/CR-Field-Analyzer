@@ -9,7 +9,8 @@ struct StoredWiFiMeasurementSession
     bool available = false;
 
     // Version of the persisted text record. Version 1 is the
-    // original 10.15B format; version 2 adds CRC32 integrity.
+    // original 10.15B format; version 2 adds CRC32 integrity;
+    // version 3 adds a wall-clock capture timestamp.
     uint8_t formatVersion = 0;
 
     // True only when the stored record carried a checksum and
@@ -17,12 +18,28 @@ struct StoredWiFiMeasurementSession
     bool integrityVerified = false;
 
     // Monotonically increasing identifier persisted in the
-    // session filename. This is used for ordering because the
-    // current hardware does not yet expose a wall-clock time.
+    // session filename. This remains the stable storage ordering
+    // key even when a wall-clock capture timestamp is available.
     uint32_t sessionId = 0;
 
+    // True when the session includes a valid wall-clock capture
+    // timestamp. Legacy version 1 and version 2 records leave this
+    // false because they only stored uptime.
+    bool capturedTimeValid = false;
+
+    // Unix epoch seconds captured when the measurement session
+    // completed. SentinelOS currently operates in local UTC-04:00,
+    // while epoch time itself remains timezone independent.
+    uint32_t capturedEpoch = 0;
+
+    static constexpr uint8_t CapturedLocalCapacity = 32;
+
+    // Human-readable ISO local timestamp persisted alongside epoch
+    // for convenient inspection of the text record on a computer.
+    char capturedLocal[CapturedLocalCapacity] = {};
+
     // Uptime timestamp captured when the measurement completed.
-    // It is useful within the original boot, but is not a date/time.
+    // Retained as diagnostic metadata even after wall-clock support.
     uint32_t completedAtMs = 0;
 
     WiFiMeasurementSummary summary{};

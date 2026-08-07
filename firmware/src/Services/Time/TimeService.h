@@ -33,6 +33,19 @@ public:
         char *buffer,
         size_t bufferSize);
 
+    static bool GetEpochTime(
+        uint32_t &epochSeconds);
+
+    static bool FormatEpochIsoLocal(
+        uint32_t epochSeconds,
+        char *buffer,
+        size_t bufferSize);
+
+    static bool FormatEpochForHistory(
+        uint32_t epochSeconds,
+        char *buffer,
+        size_t bufferSize);
+
 private:
     static constexpr uint8_t RtcAddress = 0x51;
     static constexpr uint8_t Control1Register = 0x00;

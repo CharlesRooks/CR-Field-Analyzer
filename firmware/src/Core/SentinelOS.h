@@ -28,6 +28,7 @@ private:
 
     bool measurementSavePending = false;
     uint32_t pendingMeasurementCompletedAtMs = 0;
+    uint32_t pendingMeasurementCapturedEpoch = 0;
 
     NavigationManager navigation;
     InputManager input;

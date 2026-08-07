@@ -259,6 +259,171 @@ bool TimeService::FormatLocalDateTime(
         static_cast<size_t>(written) < bufferSize;
 }
 
+bool TimeService::GetEpochTime(
+    uint32_t &epochSeconds)
+{
+    epochSeconds = 0;
+
+    if (!systemTimeValid)
+    {
+        return false;
+    }
+
+    const time_t now = time(nullptr);
+
+    if (now <= 0)
+    {
+        return false;
+    }
+
+    struct tm localTime{};
+
+    if (localtime_r(
+            &now,
+            &localTime) == nullptr ||
+        localTime.tm_year + 1900 <
+            MinimumValidYear ||
+        localTime.tm_year + 1900 >
+            MaximumValidYear)
+    {
+        return false;
+    }
+
+    epochSeconds =
+        static_cast<uint32_t>(now);
+    return true;
+}
+
+bool TimeService::FormatEpochIsoLocal(
+    uint32_t epochSeconds,
+    char *buffer,
+    size_t bufferSize)
+{
+    if (buffer == nullptr ||
+        bufferSize == 0 ||
+        epochSeconds == 0)
+    {
+        if (buffer != nullptr &&
+            bufferSize > 0)
+        {
+            buffer[0] = '\0';
+        }
+
+        return false;
+    }
+
+    const time_t value =
+        static_cast<time_t>(epochSeconds);
+
+    struct tm localTime{};
+
+    if (localtime_r(
+            &value,
+            &localTime) == nullptr)
+    {
+        buffer[0] = '\0';
+        return false;
+    }
+
+    const int year =
+        localTime.tm_year + 1900;
+
+    if (year < MinimumValidYear ||
+        year > MaximumValidYear)
+    {
+        buffer[0] = '\0';
+        return false;
+    }
+
+    const int written = std::snprintf(
+        buffer,
+        bufferSize,
+        "%04d-%02d-%02dT%02d:%02d:%02d-04:00",
+        year,
+        localTime.tm_mon + 1,
+        localTime.tm_mday,
+        localTime.tm_hour,
+        localTime.tm_min,
+        localTime.tm_sec);
+
+    return written > 0 &&
+        static_cast<size_t>(written) < bufferSize;
+}
+
+bool TimeService::FormatEpochForHistory(
+    uint32_t epochSeconds,
+    char *buffer,
+    size_t bufferSize)
+{
+    if (buffer == nullptr ||
+        bufferSize == 0 ||
+        epochSeconds == 0)
+    {
+        if (buffer != nullptr &&
+            bufferSize > 0)
+        {
+            buffer[0] = '\0';
+        }
+
+        return false;
+    }
+
+    const time_t value =
+        static_cast<time_t>(epochSeconds);
+
+    struct tm localTime{};
+
+    if (localtime_r(
+            &value,
+            &localTime) == nullptr)
+    {
+        buffer[0] = '\0';
+        return false;
+    }
+
+    const int year =
+        localTime.tm_year + 1900;
+
+    if (year < MinimumValidYear ||
+        year > MaximumValidYear)
+    {
+        buffer[0] = '\0';
+        return false;
+    }
+
+    static constexpr const char *Months[] = {
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    };
+
+    int displayHour =
+        localTime.tm_hour % 12;
+
+    if (displayHour == 0)
+    {
+        displayHour = 12;
+    }
+
+    const char *meridiem =
+        localTime.tm_hour >= 12
+            ? "PM"
+            : "AM";
+
+    const int written = std::snprintf(
+        buffer,
+        bufferSize,
+        "%02d %s %04d  %d:%02d %s",
+        localTime.tm_mday,
+        Months[localTime.tm_mon],
+        year,
+        displayHour,
+        localTime.tm_min,
+        meridiem);
+
+    return written > 0 &&
+        static_cast<size_t>(written) < bufferSize;
+}
+
 bool TimeService::DetectRtc()
 {
     Wire.beginTransmission(RtcAddress);

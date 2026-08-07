@@ -3,6 +3,7 @@
 #include "../Core/Messaging/MessageBus.h"
 #include "../Services/WiFi/WiFiService.h"
 #include "../Services/Storage/StorageService.h"
+#include "../Services/Time/TimeService.h"
 #include "../UI/Theme.h"
 
 #include <Arduino.h>
@@ -960,6 +961,8 @@ void ScanScreen::ShowChannelResults()
         {
             AddSavedSessionHeader(
                 saved->sessionId,
+                saved->capturedTimeValid,
+                saved->capturedEpoch,
                 saved->completedAtMs);
 
             ShowMeasurementSummary(
@@ -1069,8 +1072,34 @@ void ScanScreen::ShowMeasurementSummary(
 
 void ScanScreen::AddSavedSessionHeader(
     uint32_t sessionId,
+    bool capturedTimeValid,
+    uint32_t capturedEpoch,
     uint32_t completedAtMs)
 {
+    char text[96];
+
+    if (capturedTimeValid &&
+        capturedEpoch != 0)
+    {
+        char capturedText[40] = {};
+
+        if (TimeService::FormatEpochForHistory(
+                capturedEpoch,
+                capturedText,
+                sizeof(capturedText)))
+        {
+            std::snprintf(
+                text,
+                sizeof(text),
+                "SAVED SESSION #%lu   %s",
+                static_cast<unsigned long>(sessionId),
+                capturedText);
+
+            AddSectionLabel(text);
+            return;
+        }
+    }
+
     const uint32_t totalSeconds =
         completedAtMs / 1000UL;
     const uint32_t hours =
@@ -1080,13 +1109,11 @@ void ScanScreen::AddSavedSessionHeader(
     const uint32_t seconds =
         totalSeconds % 60UL;
 
-    char text[96];
-
     std::snprintf(
         text,
         sizeof(text),
         "SAVED SESSION #%lu   "
-        "Captured at uptime %02lu:%02lu:%02lu",
+        "Legacy uptime %02lu:%02lu:%02lu",
         static_cast<unsigned long>(sessionId),
         static_cast<unsigned long>(hours),
         static_cast<unsigned long>(minutes),

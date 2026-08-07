@@ -97,6 +97,8 @@ private:
 
     void AddSavedSessionHeader(
         uint32_t sessionId,
+        bool capturedTimeValid,
+        uint32_t capturedEpoch,
         uint32_t completedAtMs);
 
     void AddMessageRow(
