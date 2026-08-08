@@ -24,7 +24,10 @@ enum class StorageValidationResult : uint8_t
 class StorageService
 {
 public:
-    static constexpr uint8_t MaxSavedSessions = 5;
+    // Milestone 10.18 expands retained history while keeping only a
+    // lightweight SD-backed index in RAM. Full session details are
+    // loaded and CRC-checked only when the user opens a record.
+    static constexpr uint8_t MaxSavedSessions = 100;
 
     static void Begin();
 
@@ -50,15 +53,20 @@ public:
         uint32_t capturedEpoch,
         const char *capturedLocal);
 
-    // Saved sessions are exposed newest first.
+    // Saved sessions are indexed newest first. GetSavedSession()
+    // performs on-demand SD loading and integrity verification.
     static uint8_t GetSavedSessionCount();
+
+    static const StoredWiFiMeasurementSessionIndex *
+        GetSavedSessionIndex(uint8_t index);
 
     static const StoredWiFiMeasurementSession *
         GetSavedSession(uint8_t index);
 
 private:
     static constexpr uint8_t CurrentSessionFormatVersion = 3;
-    static constexpr uint8_t EnumeratedSessionCapacity = 64;
+    static constexpr uint8_t EnumeratedSessionCapacity = 128;
+    static constexpr uint8_t InvalidLoadedSessionIndex = 0xFF;
 
     enum class SessionReadResult : uint8_t
     {
@@ -79,8 +87,11 @@ private:
     static uint64_t filesystemUsedBytes;
     static StorageValidationResult validationResult;
 
-    static StoredWiFiMeasurementSession
-        savedSessions[MaxSavedSessions];
+    static StoredWiFiMeasurementSessionIndex
+        savedSessionIndex[MaxSavedSessions];
+
+    static StoredWiFiMeasurementSession loadedSession;
+    static uint8_t loadedSessionIndex;
 
     static uint8_t savedSessionCount;
     static uint32_t nextSessionId;
@@ -118,8 +129,17 @@ private:
         char *buffer,
         size_t bufferSize);
 
-    static void InsertSavedSession(
+    static void InsertSavedSessionIndex(
         const StoredWiFiMeasurementSession &session);
+
+    static void RemoveIndexedSessionAt(
+        uint8_t index);
+
+    static void UpdateIndexMetadata(
+        uint8_t index,
+        const StoredWiFiMeasurementSession &session);
+
+    static void InvalidateLoadedSession();
 
     static void RemoveSessionFile(
         uint32_t sessionId);
@@ -127,11 +147,6 @@ private:
     static void QuarantineSessionFile(
         uint32_t sessionId,
         SessionReadResult result);
-
-    static bool IsSessionIdKept(
-        uint32_t sessionId,
-        const uint32_t *keptIds,
-        uint8_t keptCount);
 
     static bool RunReadWriteValidation();
 

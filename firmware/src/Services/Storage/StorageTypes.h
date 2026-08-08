@@ -44,3 +44,23 @@ struct StoredWiFiMeasurementSession
 
     WiFiMeasurementSummary summary{};
 };
+
+struct StoredWiFiMeasurementSessionIndex
+{
+    bool available = false;
+
+    // The SD-card filename remains the authoritative ordering key.
+    uint32_t sessionId = 0;
+
+    // Metadata is populated lazily the first time the full session
+    // is opened. Startup indexing therefore avoids loading every
+    // detailed measurement record into RAM.
+    bool metadataLoaded = false;
+    bool capturedTimeValid = false;
+    uint32_t capturedEpoch = 0;
+    uint8_t networkCount = 0;
+    uint8_t bestChannel = 0;
+    WiFiRecommendationConfidence confidence =
+        WiFiRecommendationConfidence::Unknown;
+};
+

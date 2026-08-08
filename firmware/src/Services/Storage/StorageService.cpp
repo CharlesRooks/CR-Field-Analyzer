@@ -261,9 +261,15 @@ uint64_t StorageService::filesystemUsedBytes = 0;
 StorageValidationResult StorageService::validationResult =
     StorageValidationResult::NotRun;
 
-StoredWiFiMeasurementSession
-    StorageService::savedSessions[
+StoredWiFiMeasurementSessionIndex
+    StorageService::savedSessionIndex[
         StorageService::MaxSavedSessions] = {};
+
+StoredWiFiMeasurementSession
+    StorageService::loadedSession{};
+
+uint8_t StorageService::loadedSessionIndex =
+    StorageService::InvalidLoadedSessionIndex;
 
 uint8_t StorageService::savedSessionCount = 0;
 uint32_t StorageService::nextSessionId = 1;
@@ -278,13 +284,15 @@ void StorageService::Begin()
     validationResult = StorageValidationResult::NotRun;
     savedSessionCount = 0;
     nextSessionId = 1;
+    loadedSession = StoredWiFiMeasurementSession{};
+    loadedSessionIndex = InvalidLoadedSessionIndex;
 
     for (uint8_t index = 0;
          index < MaxSavedSessions;
          ++index)
     {
-        savedSessions[index] =
-            StoredWiFiMeasurementSession{};
+        savedSessionIndex[index] =
+            StoredWiFiMeasurementSessionIndex{};
     }
 
     Serial.println(
@@ -518,12 +526,12 @@ bool StorageService::SaveMeasurementSummary(
     if (savedSessionCount >= MaxSavedSessions)
     {
         displacedSessionId =
-            savedSessions[
+            savedSessionIndex[
                 MaxSavedSessions - 1]
                 .sessionId;
     }
 
-    InsertSavedSession(session);
+    InsertSavedSessionIndex(session);
 
     if (displacedSessionId != 0 &&
         displacedSessionId != session.sessionId)
@@ -573,6 +581,17 @@ uint8_t StorageService::GetSavedSessionCount()
     return savedSessionCount;
 }
 
+const StoredWiFiMeasurementSessionIndex *
+StorageService::GetSavedSessionIndex(uint8_t index)
+{
+    if (index >= savedSessionCount)
+    {
+        return nullptr;
+    }
+
+    return &savedSessionIndex[index];
+}
+
 const StoredWiFiMeasurementSession *
 StorageService::GetSavedSession(uint8_t index)
 {
@@ -581,7 +600,63 @@ StorageService::GetSavedSession(uint8_t index)
         return nullptr;
     }
 
-    return &savedSessions[index];
+    const uint32_t sessionId =
+        savedSessionIndex[index].sessionId;
+
+    if (loadedSessionIndex == index &&
+        loadedSession.available &&
+        loadedSession.sessionId == sessionId)
+    {
+        return &loadedSession;
+    }
+
+    StoredWiFiMeasurementSession session{};
+    const SessionReadResult result =
+        ReadMeasurementSession(
+            sessionId,
+            session);
+
+    if (result != SessionReadResult::Success)
+    {
+        Serial.printf(
+            "StorageService: Session %lu skipped on open - %s\n",
+            static_cast<unsigned long>(sessionId),
+            GetSessionReadResultText(result));
+
+        QuarantineSessionFile(
+            sessionId,
+            result);
+
+        RemoveIndexedSessionAt(index);
+        return nullptr;
+    }
+
+    if (session.integrityVerified)
+    {
+        Serial.printf(
+            "StorageService: Session %lu verified on demand "
+            "(format v%u, CRC32 valid)\n",
+            static_cast<unsigned long>(
+                session.sessionId),
+            session.formatVersion);
+    }
+    else
+    {
+        Serial.printf(
+            "StorageService: Session %lu loaded on demand as "
+            "legacy format v%u without checksum\n",
+            static_cast<unsigned long>(
+                session.sessionId),
+            session.formatVersion);
+    }
+
+    loadedSession = session;
+    loadedSessionIndex = index;
+    UpdateIndexMetadata(
+        index,
+        loadedSession);
+
+    return &loadedSession;
 }
 
 bool StorageService::EnsureDirectories()
@@ -680,9 +755,8 @@ void StorageService::LoadMeasurementSessions()
             }
             else
             {
-                // Quarantined records must not be loaded as active
-                // .txt sessions, but their IDs still count so a
-                // future save never reuses a quarantined identifier.
+                // Quarantined IDs still advance the sequence so a
+                // damaged record is never silently reused.
                 uint32_t quarantinedSessionId = 0;
 
                 if (TryExtractSessionFileId(
@@ -707,7 +781,7 @@ void StorageService::LoadMeasurementSessions()
     if (enumerationTruncated)
     {
         Serial.printf(
-            "StorageService: Warning - session index "
+            "StorageService: Warning - session enumeration "
             "limited to %u files\n",
             EnumeratedSessionCapacity);
     }
@@ -716,87 +790,32 @@ void StorageService::LoadMeasurementSessions()
         sessionIds,
         enumeratedCount);
 
-    uint32_t keptIds[MaxSavedSessions] = {};
-    uint8_t keptCount = 0;
-
-    uint32_t validIds[
-        EnumeratedSessionCapacity] = {};
-    uint8_t validCount = 0;
-    uint8_t skippedCount = 0;
+    const uint8_t retainedCount =
+        enumeratedCount < MaxSavedSessions
+            ? enumeratedCount
+            : MaxSavedSessions;
 
     for (uint8_t index = 0;
+         index < retainedCount;
+         ++index)
+    {
+        savedSessionIndex[index] =
+            StoredWiFiMeasurementSessionIndex{};
+        savedSessionIndex[index].available = true;
+        savedSessionIndex[index].sessionId =
+            sessionIds[index];
+    }
+
+    savedSessionCount = retainedCount;
+
+    // Retention is based on the monotonic session ID. Detailed
+    // records are intentionally not parsed here; full CRC validation
+    // is deferred until a user opens a session from History.
+    for (uint8_t index = retainedCount;
          index < enumeratedCount;
          ++index)
     {
-        StoredWiFiMeasurementSession session{};
-
-        const SessionReadResult result =
-            ReadMeasurementSession(
-                sessionIds[index],
-                session);
-
-        if (result != SessionReadResult::Success)
-        {
-            ++skippedCount;
-
-            Serial.printf(
-                "StorageService: Session %lu skipped - %s\n",
-                static_cast<unsigned long>(
-                    sessionIds[index]),
-                GetSessionReadResultText(result));
-
-            QuarantineSessionFile(
-                sessionIds[index],
-                result);
-            continue;
-        }
-
-        validIds[validCount] = session.sessionId;
-        ++validCount;
-
-        if (session.integrityVerified)
-        {
-            Serial.printf(
-                "StorageService: Session %lu verified "
-                "(format v%u, CRC32 valid)\n",
-                static_cast<unsigned long>(
-                    session.sessionId),
-                session.formatVersion);
-        }
-        else
-        {
-            Serial.printf(
-                "StorageService: Session %lu loaded as "
-                "legacy format v%u without checksum\n",
-                static_cast<unsigned long>(
-                    session.sessionId),
-                session.formatVersion);
-        }
-
-        if (keptCount < MaxSavedSessions)
-        {
-            savedSessions[keptCount] = session;
-            keptIds[keptCount] = session.sessionId;
-            ++keptCount;
-        }
-    }
-
-    savedSessionCount = keptCount;
-
-    // Remove only verified/parseable records outside the rolling
-    // retention window. Corrupt files are preserved for diagnosis
-    // and skipped safely on future boots.
-    for (uint8_t index = 0;
-         index < validCount;
-         ++index)
-    {
-        if (!IsSessionIdKept(
-                validIds[index],
-                keptIds,
-                keptCount))
-        {
-            RemoveSessionFile(validIds[index]);
-        }
+        RemoveSessionFile(sessionIds[index]);
     }
 
     nextSessionId = maximumSessionId + 1;
@@ -807,12 +826,11 @@ void StorageService::LoadMeasurementSessions()
     }
 
     Serial.printf(
-        "StorageService: Restored %u valid saved "
-        "measurement session%s; %u invalid skipped; "
+        "StorageService: Indexed %u saved measurement "
+        "session%s; full verification deferred until opened; "
         "next ID %lu\n",
         savedSessionCount,
         savedSessionCount == 1 ? "" : "s",
-        skippedCount,
         static_cast<unsigned long>(nextSessionId));
 }
 
@@ -1739,7 +1757,7 @@ void StorageService::BuildSessionPath(
         static_cast<unsigned long>(sessionId));
 }
 
-void StorageService::InsertSavedSession(
+void StorageService::InsertSavedSessionIndex(
     const StoredWiFiMeasurementSession &session)
 {
     const uint8_t upperIndex =
@@ -1751,16 +1769,88 @@ void StorageService::InsertSavedSession(
          index > 0;
          --index)
     {
-        savedSessions[index] =
-            savedSessions[index - 1];
+        savedSessionIndex[index] =
+            savedSessionIndex[index - 1];
     }
 
-    savedSessions[0] = session;
+    savedSessionIndex[0] =
+        StoredWiFiMeasurementSessionIndex{};
+    savedSessionIndex[0].available = true;
+    savedSessionIndex[0].sessionId =
+        session.sessionId;
+
+    UpdateIndexMetadata(
+        0,
+        session);
 
     if (savedSessionCount < MaxSavedSessions)
     {
         ++savedSessionCount;
     }
+
+    InvalidateLoadedSession();
+}
+
+void StorageService::RemoveIndexedSessionAt(
+    uint8_t index)
+{
+    if (index >= savedSessionCount)
+    {
+        return;
+    }
+
+    for (uint8_t current = index;
+         current + 1 < savedSessionCount;
+         ++current)
+    {
+        savedSessionIndex[current] =
+            savedSessionIndex[current + 1];
+    }
+
+    if (savedSessionCount > 0)
+    {
+        --savedSessionCount;
+        savedSessionIndex[savedSessionCount] =
+            StoredWiFiMeasurementSessionIndex{};
+    }
+
+    InvalidateLoadedSession();
+}
+
+void StorageService::UpdateIndexMetadata(
+    uint8_t index,
+    const StoredWiFiMeasurementSession &session)
+{
+    if (index >= savedSessionCount &&
+        !(index == 0 && savedSessionCount == 0))
+    {
+        return;
+    }
+
+    StoredWiFiMeasurementSessionIndex &entry =
+        savedSessionIndex[index];
+
+    entry.available = true;
+    entry.sessionId = session.sessionId;
+    entry.metadataLoaded = true;
+    entry.capturedTimeValid =
+        session.capturedTimeValid;
+    entry.capturedEpoch =
+        session.capturedEpoch;
+    entry.networkCount =
+        session.summary.networkCount;
+    entry.bestChannel =
+        session.summary.recommendation.bestChannel;
+    entry.confidence =
+        session.summary.recommendation.confidence;
+}
+
+void StorageService::InvalidateLoadedSession()
+{
+    loadedSession =
+        StoredWiFiMeasurementSession{};
+    loadedSessionIndex =
+        InvalidLoadedSessionIndex;
 }
 
 void StorageService::RemoveSessionFile(
@@ -1834,23 +1924,6 @@ void StorageService::QuarantineSessionFile(
         static_cast<unsigned long>(sessionId));
 }
 
-bool StorageService::IsSessionIdKept(
-    uint32_t sessionId,
-    const uint32_t *keptIds,
-    uint8_t keptCount)
-{
-    for (uint8_t index = 0;
-         index < keptCount;
-         ++index)
-    {
-        if (keptIds[index] == sessionId)
-        {
-            return true;
-        }
-    }
-
-    return false;
-}
 
 bool StorageService::RunReadWriteValidation()
 {

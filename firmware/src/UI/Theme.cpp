@@ -24,17 +24,17 @@ namespace Theme
 
     lv_color_t Control()
     {
-        return lv_color_hex(0x2F6F73);
+        return lv_color_hex(0x3D6F9E);
     }
 
     lv_color_t ControlPressed()
     {
-        return lv_color_hex(0x25585B);
+        return lv_color_hex(0x2E5578);
     }
 
     lv_color_t ControlSelected()
     {
-        return lv_color_hex(0x82C4C0);
+        return lv_color_hex(0x8EB8DE);
     }
 
     lv_color_t ControlDisabled()
