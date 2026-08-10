@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "../../Core/Messaging/MessageBus.h"
+#include "../Storage/StorageService.h"
 
 WiFiScanState WiFiService::state =
     WiFiScanState::Idle;
@@ -79,6 +80,13 @@ void WiFiService::Begin()
 
 bool WiFiService::StartScan()
 {
+    if (StorageService::IsExternalReadOnlyAccessActive())
+    {
+        Serial.println(
+            "WiFiService: Scan blocked while USB Storage Mode is active");
+        return false;
+    }
+
     if (state == WiFiScanState::Scanning)
     {
         return false;
@@ -123,6 +131,14 @@ bool WiFiService::StartScan()
 
 bool WiFiService::ResetMeasurementSession()
 {
+    if (StorageService::IsExternalReadOnlyAccessActive())
+    {
+        Serial.println(
+            "WiFiService: Session reset blocked while "
+            "USB Storage Mode is active");
+        return false;
+    }
+
     // Do not invalidate scan data while the asynchronous
     // radio operation is still writing its results.
     if (state == WiFiScanState::Scanning)
@@ -159,6 +175,14 @@ bool WiFiService::ResetMeasurementSession()
 
 bool WiFiService::StartAutomaticMeasurementSession()
 {
+    if (StorageService::IsExternalReadOnlyAccessActive())
+    {
+        Serial.println(
+            "WiFiService: Automatic session blocked while "
+            "USB Storage Mode is active");
+        return false;
+    }
+
     if (state == WiFiScanState::Scanning ||
         IsAutomaticMeasurementSessionActive())
     {

@@ -36,6 +36,12 @@ public:
     static bool RunValidation();
 
     static bool IsAvailable();
+
+    // While USB Mass Storage has the SD card exposed to a host,
+    // SentinelOS must not modify the filesystem.
+    static void SetExternalReadOnlyAccessActive(bool active);
+    static bool IsExternalReadOnlyAccessActive();
+
     static bool ValidationPassed();
 
     static StorageValidationResult GetValidationResult();
@@ -86,6 +92,7 @@ private:
     static uint64_t filesystemTotalBytes;
     static uint64_t filesystemUsedBytes;
     static StorageValidationResult validationResult;
+    static bool externalReadOnlyAccessActive;
 
     static StoredWiFiMeasurementSessionIndex
         savedSessionIndex[MaxSavedSessions];

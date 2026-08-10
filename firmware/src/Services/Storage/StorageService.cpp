@@ -261,6 +261,8 @@ uint64_t StorageService::filesystemUsedBytes = 0;
 StorageValidationResult StorageService::validationResult =
     StorageValidationResult::NotRun;
 
+bool StorageService::externalReadOnlyAccessActive = false;
+
 StoredWiFiMeasurementSessionIndex
     StorageService::savedSessionIndex[
         StorageService::MaxSavedSessions] = {};
@@ -282,6 +284,7 @@ void StorageService::Begin()
     filesystemTotalBytes = 0;
     filesystemUsedBytes = 0;
     validationResult = StorageValidationResult::NotRun;
+    externalReadOnlyAccessActive = false;
     savedSessionCount = 0;
     nextSessionId = 1;
     loadedSession = StoredWiFiMeasurementSession{};
@@ -352,12 +355,35 @@ void StorageService::Begin()
 
 bool StorageService::RunValidation()
 {
+    if (externalReadOnlyAccessActive)
+    {
+        Serial.println(
+            "StorageService: Validation blocked while "
+            "USB Storage Mode is active");
+        return false;
+    }
+
     return RunReadWriteValidation();
 }
 
 bool StorageService::IsAvailable()
 {
     return available;
+}
+
+void StorageService::SetExternalReadOnlyAccessActive(
+    bool active)
+{
+    externalReadOnlyAccessActive = active;
+
+    Serial.printf(
+        "StorageService: External read-only access %s\n",
+        active ? "ACTIVE" : "released");
+}
+
+bool StorageService::IsExternalReadOnlyAccessActive()
+{
+    return externalReadOnlyAccessActive;
 }
 
 bool StorageService::ValidationPassed()
@@ -453,6 +479,14 @@ bool StorageService::SaveMeasurementSummary(
     uint32_t capturedEpoch,
     const char *capturedLocal)
 {
+    if (externalReadOnlyAccessActive)
+    {
+        Serial.println(
+            "StorageService: Session save blocked while "
+            "USB Storage Mode is active");
+        return false;
+    }
+
     if (!available || !summary.available)
     {
         Serial.println(

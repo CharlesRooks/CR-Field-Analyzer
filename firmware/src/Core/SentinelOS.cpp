@@ -15,6 +15,7 @@
 #include "../Services/WiFi/WiFiService.h"
 #include "../Services/Storage/StorageService.h"
 #include "../Services/Time/TimeService.h"
+#include "../Services/USB/UsbStorageService.h"
 
 
 static LilyGo_Class amoled;
@@ -80,6 +81,7 @@ void SentinelOS::Begin()
 
     TimeService::Begin();
     StorageService::Begin();
+    UsbStorageService::Begin();
 
     beginLvglHelper(amoled);
 
@@ -155,6 +157,7 @@ void SentinelOS::Update()
             }
 
             PowerService::Update();
+            UsbStorageService::Update();
             WiFiService::Update();
 
             if (measurementSavePending)

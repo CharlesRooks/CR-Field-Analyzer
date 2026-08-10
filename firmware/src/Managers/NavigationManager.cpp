@@ -1,5 +1,6 @@
 #include "NavigationManager.h"
 #include "../Core/Messaging/MessageBus.h"
+#include "../Services/USB/UsbStorageService.h"
 #include <Arduino.h>
 
 NavigationManager *NavigationManager::instance = nullptr;
@@ -104,6 +105,14 @@ void NavigationManager::HandleMessage(const Message &message)
 {
     if (instance == nullptr ||
         message.type != MessageType::InputEvent)
+    {
+        return;
+    }
+
+    // Keep SentinelOS on the Tools page while the SD card is exposed
+    // to the host. This prevents navigation into views that may read
+    // storage while USB Mass Storage is active.
+    if (UsbStorageService::IsActive())
     {
         return;
     }
