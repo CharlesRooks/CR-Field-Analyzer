@@ -264,7 +264,7 @@ void ToolsScreen::RefreshUsbStorageStatus()
         case UsbStorageState::Ready:
             lv_label_set_text(
                 statusLabel,
-                "Ready");
+                "USB storage ready");
 
             if (measurementBusy)
             {
@@ -281,9 +281,9 @@ void ToolsScreen::RefreshUsbStorageStatus()
             {
                 lv_label_set_text(
                     detailLabel,
-                    "Expose the SentinelOS SD card to Windows as "
-                    "read-only USB storage. SentinelOS storage writes "
-                    "are suspended while the drive is active.");
+                    "Share the SD card with Windows as a read-only "
+                    "USB drive. SentinelOS pauses SD writes while "
+                    "the drive is connected.");
 
                 lv_obj_clear_state(
                     usbButton,
@@ -292,7 +292,7 @@ void ToolsScreen::RefreshUsbStorageStatus()
 
             lv_label_set_text(
                 usbButtonLabel,
-                "USB Storage");
+                "Connect");
             break;
 
         case UsbStorageState::Active:
@@ -302,9 +302,9 @@ void ToolsScreen::RefreshUsbStorageStatus()
             std::snprintf(
                 detail,
                 sizeof(detail),
-                "USB STORAGE ACTIVE\n"
-                "Windows can read the SD card. Use Eject in Windows "
-                "when finished.\nReads: %lu   Rejected writes: %lu",
+                "READ-ONLY USB DRIVE\n"
+                "Windows can browse the SD card. Eject the drive in "
+                "Windows when finished.\nReads: %lu   Blocked writes: %lu",
                 static_cast<unsigned long>(
                     UsbStorageService::GetReadRequestCount()),
                 static_cast<unsigned long>(
@@ -312,7 +312,7 @@ void ToolsScreen::RefreshUsbStorageStatus()
 
             lv_label_set_text(
                 statusLabel,
-                "Connected to host");
+                "SD card shared with Windows");
 
             lv_label_set_text(
                 detailLabel,
@@ -331,13 +331,12 @@ void ToolsScreen::RefreshUsbStorageStatus()
         case UsbStorageState::HostEjected:
             lv_label_set_text(
                 statusLabel,
-                "Safely ejected");
+                "Drive safely ejected");
 
             lv_label_set_text(
                 detailLabel,
-                "Windows released the SD card. SentinelOS storage "
-                "access is available again. Tap Reconnect to expose "
-                "the card again.");
+                "SentinelOS SD access is restored. Tap Reconnect "
+                "when you need to browse the card from Windows again.");
 
             lv_obj_clear_state(
                 usbButton,
@@ -360,9 +359,7 @@ void ToolsScreen::RefreshUsbStorageStatus()
                 detailLabel,
                 UsbStorageService::IsFeatureBuilt()
                     ? "SentinelOS could not prepare the SD card for USB storage."
-                    : "Normal SentinelOS keeps the hardware USB CDC/JTAG "
-                      "interface. Build the 10.19B USB Storage environment "
-                      "to test integrated mass storage.");
+                    : "USB storage is not available in this build.");
 
             lv_obj_add_state(
                 usbButton,

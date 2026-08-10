@@ -145,7 +145,7 @@ void UsbStorageService::Begin()
 
     massStorage.vendorID("SENTINEL");
     massStorage.productID("SentinelOS SD");
-    massStorage.productRevision("0.2");
+    massStorage.productRevision("0.3");
     massStorage.onRead(ReadSdBlocks);
     massStorage.onWrite(RejectSdWrites);
     massStorage.onStartStop(HandleStartStop);
@@ -159,9 +159,9 @@ void UsbStorageService::Begin()
         return;
     }
 
-    // The MSC interface is part of the TinyUSB descriptor from boot,
-    // but the medium remains absent until the user explicitly enters
-    // USB Storage Mode from Tools.
+    // The MSC interface is part of the production TinyUSB descriptor
+    // from boot, but the medium remains absent until the user explicitly
+    // enters USB Storage Mode from Tools.
     massStorage.mediaPresent(false);
 
     state = UsbStorageState::Ready;

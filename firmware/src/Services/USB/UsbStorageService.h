@@ -22,7 +22,7 @@ public:
 
     static UsbStorageState GetState();
 
-    // Milestone 10.19B remains intentionally read-only. SentinelOS
+    // USB Storage Mode is intentionally read-only. SentinelOS
     // suspends its own storage writes while the host has the media.
     static bool EnterReadOnlyMode();
     static void ExitReadOnlyMode();
