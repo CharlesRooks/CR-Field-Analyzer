@@ -14,6 +14,8 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 * Production TinyUSB composite USB architecture providing CDC serial and read-only SD Mass Storage.
 * `UsbStorageService` production integration for read-only USB Mass Storage.
 * `flash-monitor.ps1` development helper for ESP32-S3 firmware upload, application-port detection, and automatic serial monitoring.
+* Saved Wi-Fi measurement sessions can now display the persisted per-BSSID network inventory in the History Networks view.
+* Historical network rows use the average RSSI measured across the completed measurement session.
 
 ### Changed
 
@@ -26,6 +28,9 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 * Production LilyGO USB configuration now uses TinyUSB OTG mode with `ARDUINO_USB_MODE=0` and `ARDUINO_USB_CDC_ON_BOOT=1`.
 * PlatformIO serial monitoring now asserts DTR with `monitor_dtr = 1` to support reliable TinyUSB CDC output.
 * Development upload workflow now accounts for ESP32-S3 ROM-download and SentinelOS application USB re-enumeration.
+* Wi-Fi History now supports both Networks and Channels views without leaving the selected saved session.
+* Entering History preserves the currently selected Wi-Fi presentation.
+* Saved-session status remains visible while reviewing either Networks or Channels.
 
 ### Hardened
 
@@ -63,6 +68,10 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 * Wi-Fi service initialization and successful startup scan.
 * Splash-to-Running application-state transition.
 * End-to-end `flash-monitor.ps1` upload, manual-reset, CDC detection, and serial-monitor workflow.
+* History Networks and Channels navigation on hardware.
+* Older/Newer saved-session navigation in both History views.
+* Correct display of version-4 saved network inventories.
+* Graceful handling of legacy saved sessions without network inventory data.
 
 
 ## [0.5.0-alpha] - 2026-07-11

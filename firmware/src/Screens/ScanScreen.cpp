@@ -558,9 +558,7 @@ void ScanScreen::RefreshFromService()
         {
             char statusText[32];
 
-            if (activeView ==
-                    WiFiScanView::Channels &&
-                reviewingSavedSession)
+            if (reviewingSavedSession)
             {
                 const uint8_t savedCount =
                     StorageService::GetSavedSessionCount();
@@ -868,8 +866,6 @@ void ScanScreen::UpdateHistoryControls()
         return;
     }
 
-    // History review always uses the Channels presentation.
-    activeView = WiFiScanView::Channels;
 
     lv_obj_clear_state(
         historyButton,
@@ -923,6 +919,100 @@ void ScanScreen::UpdateHistoryControls()
 void ScanScreen::ShowNetworkResults(
     uint8_t networkCount)
 {
+    // When reviewing History, display the network inventory stored
+    // with the selected measurement session rather than the current
+    // live Wi-Fi scan cache.
+    if (reviewingSavedSession)
+    {
+        const StoredWiFiMeasurementSession *saved =
+            StorageService::GetSavedSession(
+                selectedSavedSessionIndex);
+
+        if (saved != nullptr &&
+            saved->available &&
+            saved->summary.available)
+        {
+            AddSavedSessionHeader(
+                saved->sessionId,
+                saved->capturedTimeValid,
+                saved->capturedEpoch,
+                saved->completedAtMs);
+
+            const WiFiMeasurementSummary &summary =
+                saved->summary;
+
+            const uint8_t observedCount =
+                summary.observedNetworkCount <=
+                        WiFiMeasurementSummary::NetworkCapacity
+                    ? summary.observedNetworkCount
+                    : WiFiMeasurementSummary::NetworkCapacity;
+
+            if (observedCount == 0)
+            {
+                AddMessageRow(
+                    "No Wi-Fi networks were recorded "
+                    "for this session.");
+
+                return;
+            }
+
+            AddSectionLabel(
+                "OBSERVED NETWORKS");
+
+            for (uint8_t index = 0;
+                 index < observedCount;
+                 ++index)
+            {
+                const WiFiMeasuredNetwork &measured =
+                    summary.networks[index];
+
+                // Reuse the existing live-network presentation.
+                // For a stored measurement session, RSSI represents
+                // the average signal observed across the session.
+                WiFiNetworkInfo displayNetwork{};
+
+                std::snprintf(
+                    displayNetwork.ssid,
+                    sizeof(displayNetwork.ssid),
+                    "%s",
+                    measured.ssid);
+
+                for (uint8_t byte = 0;
+                     byte < WiFiNetworkInfo::BssidLength;
+                     ++byte)
+                {
+                    displayNetwork.bssid[byte] =
+                        measured.bssid[byte];
+                }
+
+                displayNetwork.rssi =
+                    measured.averageRssi;
+
+                displayNetwork.channel =
+                    measured.channel;
+
+                displayNetwork.signalQuality =
+                    measured.signalQuality;
+
+                displayNetwork.security =
+                    measured.security;
+
+                displayNetwork.hidden =
+                    measured.hidden;
+
+                AddNetworkRow(displayNetwork);
+            }
+
+            return;
+        }
+
+        // If the stored session cannot be loaded, return to the
+        // normal live presentation.
+        reviewingSavedSession = false;
+        UpdateHistoryControls();
+    }
+
+    // Normal live-scan presentation.
     if (networkCount == 0)
     {
         AddMessageRow(
@@ -1959,9 +2049,6 @@ void ScanScreen::HandleNetworksButton(
     instance->activeView =
         WiFiScanView::Networks;
 
-    instance->reviewingSavedSession = false;
-    instance->selectedSavedSessionIndex = 0;
-
     instance->UpdateViewButtons();
     instance->refreshPending = true;
 }
@@ -2023,8 +2110,6 @@ void ScanScreen::HandleHistoryButton(
     }
     else
     {
-        instance->activeView =
-            WiFiScanView::Channels;
         instance->reviewingSavedSession = true;
         instance->selectedSavedSessionIndex = 0;
     }
