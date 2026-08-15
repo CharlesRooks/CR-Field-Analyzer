@@ -70,7 +70,7 @@ public:
         GetSavedSession(uint8_t index);
 
 private:
-    static constexpr uint8_t CurrentSessionFormatVersion = 3;
+    static constexpr uint8_t CurrentSessionFormatVersion = 4;
     static constexpr uint8_t EnumeratedSessionCapacity = 128;
     static constexpr uint8_t InvalidLoadedSessionIndex = 0xFF;
 

@@ -149,6 +149,343 @@ namespace
         return true;
     }
 
+    bool ParseRssi(
+        const String &value,
+        int32_t &result)
+    {
+        if (value.length() == 0)
+        {
+            return false;
+        }
+
+        char *end = nullptr;
+        const long parsed =
+            std::strtol(value.c_str(), &end, 10);
+
+        if (end == value.c_str() ||
+            *end != '\0' ||
+            parsed < -127 ||
+            parsed > 0)
+        {
+            return false;
+        }
+
+        result = static_cast<int32_t>(parsed);
+        return true;
+    }
+
+    int HexNibble(char value)
+    {
+        if (value >= '0' && value <= '9')
+        {
+            return value - '0';
+        }
+
+        if (value >= 'A' && value <= 'F')
+        {
+            return value - 'A' + 10;
+        }
+
+        if (value >= 'a' && value <= 'f')
+        {
+            return value - 'a' + 10;
+        }
+
+        return -1;
+    }
+
+    bool EncodeStorageText(
+        const char *source,
+        char *destination,
+        size_t destinationSize)
+    {
+        if (source == nullptr ||
+            destination == nullptr ||
+            destinationSize == 0)
+        {
+            return false;
+        }
+
+        static constexpr char HexDigits[] =
+            "0123456789ABCDEF";
+
+        size_t writeIndex = 0;
+
+        for (size_t index = 0;
+             source[index] != '\0';
+             ++index)
+        {
+            const uint8_t value =
+                static_cast<uint8_t>(source[index]);
+
+            const bool mustEscape =
+                value < 0x20 ||
+                value > 0x7E ||
+                value == '%';
+
+            const size_t required =
+                mustEscape ? 3 : 1;
+
+            if (writeIndex + required >=
+                destinationSize)
+            {
+                return false;
+            }
+
+            if (mustEscape)
+            {
+                destination[writeIndex++] = '%';
+                destination[writeIndex++] =
+                    HexDigits[(value >> 4) & 0x0F];
+                destination[writeIndex++] =
+                    HexDigits[value & 0x0F];
+            }
+            else
+            {
+                destination[writeIndex++] =
+                    static_cast<char>(value);
+            }
+        }
+
+        destination[writeIndex] = '\0';
+        return true;
+    }
+
+    bool DecodeStorageText(
+        const String &source,
+        char *destination,
+        size_t destinationSize)
+    {
+        if (destination == nullptr ||
+            destinationSize == 0)
+        {
+            return false;
+        }
+
+        size_t writeIndex = 0;
+
+        for (size_t index = 0;
+             index < source.length();
+             ++index)
+        {
+            uint8_t value =
+                static_cast<uint8_t>(source[index]);
+
+            if (value == '%')
+            {
+                if (index + 2 >= source.length())
+                {
+                    return false;
+                }
+
+                const int high =
+                    HexNibble(source[index + 1]);
+                const int low =
+                    HexNibble(source[index + 2]);
+
+                if (high < 0 || low < 0)
+                {
+                    return false;
+                }
+
+                value =
+                    static_cast<uint8_t>(
+                        (high << 4) | low);
+
+                index += 2;
+            }
+
+            if (value == 0 ||
+                writeIndex + 1 >= destinationSize)
+            {
+                return false;
+            }
+
+            destination[writeIndex++] =
+                static_cast<char>(value);
+        }
+
+        destination[writeIndex] = '\0';
+        return true;
+    }
+
+    const char *SecurityToStorageText(
+        WiFiSecurity security)
+    {
+        switch (security)
+        {
+            case WiFiSecurity::Open:
+                return "OPEN";
+            case WiFiSecurity::WEP:
+                return "WEP";
+            case WiFiSecurity::WPA_PSK:
+                return "WPA_PSK";
+            case WiFiSecurity::WPA2_PSK:
+                return "WPA2_PSK";
+            case WiFiSecurity::WPA_WPA2_PSK:
+                return "WPA_WPA2_PSK";
+            case WiFiSecurity::WPA2_Enterprise:
+                return "WPA2_ENTERPRISE";
+            case WiFiSecurity::WPA3_PSK:
+                return "WPA3_PSK";
+            case WiFiSecurity::WPA2_WPA3_PSK:
+                return "WPA2_WPA3_PSK";
+            case WiFiSecurity::WAPI_PSK:
+                return "WAPI_PSK";
+            case WiFiSecurity::Unknown:
+            default:
+                return "UNKNOWN";
+        }
+    }
+
+    bool ParseSecurityText(
+        const String &value,
+        WiFiSecurity &security)
+    {
+        if (value == "OPEN")
+        {
+            security = WiFiSecurity::Open;
+        }
+        else if (value == "WEP")
+        {
+            security = WiFiSecurity::WEP;
+        }
+        else if (value == "WPA_PSK")
+        {
+            security = WiFiSecurity::WPA_PSK;
+        }
+        else if (value == "WPA2_PSK")
+        {
+            security = WiFiSecurity::WPA2_PSK;
+        }
+        else if (value == "WPA_WPA2_PSK")
+        {
+            security = WiFiSecurity::WPA_WPA2_PSK;
+        }
+        else if (value == "WPA2_ENTERPRISE")
+        {
+            security = WiFiSecurity::WPA2_Enterprise;
+        }
+        else if (value == "WPA3_PSK")
+        {
+            security = WiFiSecurity::WPA3_PSK;
+        }
+        else if (value == "WPA2_WPA3_PSK")
+        {
+            security = WiFiSecurity::WPA2_WPA3_PSK;
+        }
+        else if (value == "WAPI_PSK")
+        {
+            security = WiFiSecurity::WAPI_PSK;
+        }
+        else if (value == "UNKNOWN")
+        {
+            security = WiFiSecurity::Unknown;
+        }
+        else
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    bool ParseBssid(
+        const String &value,
+        uint8_t *bssid)
+    {
+        if (bssid == nullptr)
+        {
+            return false;
+        }
+
+        unsigned int bytes[
+            WiFiNetworkInfo::BssidLength] = {};
+
+        char trailing = '\0';
+
+        if (std::sscanf(
+                value.c_str(),
+                "%2x:%2x:%2x:%2x:%2x:%2x%c",
+                &bytes[0],
+                &bytes[1],
+                &bytes[2],
+                &bytes[3],
+                &bytes[4],
+                &bytes[5],
+                &trailing) !=
+            WiFiNetworkInfo::BssidLength)
+        {
+            return false;
+        }
+
+        for (uint8_t index = 0;
+             index < WiFiNetworkInfo::BssidLength;
+             ++index)
+        {
+            if (bytes[index] > 0xFF)
+            {
+                return false;
+            }
+
+            bssid[index] =
+                static_cast<uint8_t>(bytes[index]);
+        }
+
+        return true;
+    }
+
+    WiFiSignalQuality ClassifyStoredSignal(
+        int32_t rssi)
+    {
+        if (rssi >= -55)
+        {
+            return WiFiSignalQuality::Excellent;
+        }
+
+        if (rssi >= -67)
+        {
+            return WiFiSignalQuality::Good;
+        }
+
+        if (rssi >= -75)
+        {
+            return WiFiSignalQuality::Fair;
+        }
+
+        return WiFiSignalQuality::Poor;
+    }
+
+    constexpr uint16_t NetworkFieldSsid =
+        1U << 0;
+    constexpr uint16_t NetworkFieldBssid =
+        1U << 1;
+    constexpr uint16_t NetworkFieldChannel =
+        1U << 2;
+    constexpr uint16_t NetworkFieldSecurity =
+        1U << 3;
+    constexpr uint16_t NetworkFieldHidden =
+        1U << 4;
+    constexpr uint16_t NetworkFieldSeen =
+        1U << 5;
+    constexpr uint16_t NetworkFieldAverageRssi =
+        1U << 6;
+    constexpr uint16_t NetworkFieldMinimumRssi =
+        1U << 7;
+    constexpr uint16_t NetworkFieldMaximumRssi =
+        1U << 8;
+
+    constexpr uint16_t NetworkFieldAll =
+        NetworkFieldSsid |
+        NetworkFieldBssid |
+        NetworkFieldChannel |
+        NetworkFieldSecurity |
+        NetworkFieldHidden |
+        NetworkFieldSeen |
+        NetworkFieldAverageRssi |
+        NetworkFieldMinimumRssi |
+        NetworkFieldMaximumRssi;
+
     uint32_t UpdateCrc32(
         uint32_t crc,
         const uint8_t *data,
@@ -253,6 +590,23 @@ namespace
         }
     }
 }
+
+// Full v4 sessions include up to 128 detailed AP records. Keep these
+// scratch objects in static storage instead of the Arduino loop-task
+// stack, which is too small for multi-kilobyte session objects.
+static StoredWiFiMeasurementSession
+    storageSessionScratch{};
+
+static StoredWiFiMeasurementSession
+    storageVerificationScratch{};
+
+// Version 4 session records contain the full AP inventory and are now
+// several kilobytes. Reuse a static default object whenever a session must
+// be cleared so brace-initialized temporaries are not materialized on the
+// Arduino loop-task stack during startup, parsing, or verification.
+static const StoredWiFiMeasurementSession
+    emptyStoredSession{};
+
 bool StorageService::available = false;
 uint8_t StorageService::detectedCardType = CARD_NONE;
 uint64_t StorageService::cardCapacityBytes = 0;
@@ -287,7 +641,7 @@ void StorageService::Begin()
     externalReadOnlyAccessActive = false;
     savedSessionCount = 0;
     nextSessionId = 1;
-    loadedSession = StoredWiFiMeasurementSession{};
+    loadedSession = emptyStoredSession;
     loadedSessionIndex = InvalidLoadedSessionIndex;
 
     for (uint8_t index = 0;
@@ -503,7 +857,10 @@ bool StorageService::SaveMeasurementSummary(
         return false;
     }
 
-    StoredWiFiMeasurementSession session{};
+    StoredWiFiMeasurementSession &session =
+        storageSessionScratch;
+
+    session = emptyStoredSession;
     session.available = true;
     session.formatVersion =
         CurrentSessionFormatVersion;
@@ -600,6 +957,17 @@ bool StorageService::SaveMeasurementSummary(
     }
 
     Serial.printf(
+        "StorageService: Session %lu includes "
+        "%u unique BSSID%s across %u completed scans\n",
+        static_cast<unsigned long>(
+            session.sessionId),
+        session.summary.observedNetworkCount,
+        session.summary.observedNetworkCount == 1
+            ? ""
+            : "s",
+        session.summary.completedScanCount);
+
+    Serial.printf(
         "StorageService: Session %lu saved, "
         "%u/%u retained\n",
         static_cast<unsigned long>(
@@ -644,7 +1012,11 @@ StorageService::GetSavedSession(uint8_t index)
         return &loadedSession;
     }
 
-    StoredWiFiMeasurementSession session{};
+    StoredWiFiMeasurementSession &session =
+        storageSessionScratch;
+
+    session = emptyStoredSession;
+
     const SessionReadResult result =
         ReadMeasurementSession(
             sessionId,
@@ -988,7 +1360,7 @@ StorageService::ParseMeasurementSession(
     fs::File &file,
     StoredWiFiMeasurementSession &session)
 {
-    session = StoredWiFiMeasurementSession{};
+    session = emptyStoredSession;
 
     uint32_t version = 0;
     uint32_t storedChecksum = 0;
@@ -1003,6 +1375,7 @@ StorageService::ParseMeasurementSession(
     bool completedAtSeen = false;
     bool scansSeen = false;
     bool networkCountSeen = false;
+    bool observedNetworkCountSeen = false;
     bool occupiedChannelsSeen = false;
     bool bestChannelSeen = false;
     bool bestScoreSeen = false;
@@ -1017,6 +1390,9 @@ StorageService::ParseMeasurementSession(
         WiFiMeasurementSummary::CandidateCapacity] = {};
     bool channelSeen[
         WiFiMeasurementSummary::ChannelCapacity] = {};
+
+    uint16_t networkFieldMask[
+        WiFiMeasurementSummary::NetworkCapacity] = {};
 
     while (file.available())
     {
@@ -1175,6 +1551,21 @@ StorageService::ParseMeasurementSession(
             session.summary.networkCount =
                 static_cast<uint8_t>(parsed);
             networkCountSeen = true;
+        }
+        else if (key == "observed_network_count")
+        {
+            if (observedNetworkCountSeen ||
+                !ParseUnsigned(value, parsed) ||
+                parsed >
+                    WiFiMeasurementSummary::NetworkCapacity)
+            {
+                return SessionReadResult::ParseFailed;
+            }
+
+            session.summary.observedNetworkCount =
+                static_cast<uint8_t>(parsed);
+
+            observedNetworkCountSeen = true;
         }
         else if (key == "occupied_channels")
         {
@@ -1403,6 +1794,158 @@ StorageService::ParseMeasurementSession(
                 static_cast<int32_t>(average);
             channelSeen[channelIndex] = true;
         }
+        else if (key.startsWith("network_"))
+        {
+            const int fieldSeparator =
+                key.indexOf('_', 8);
+
+            if (fieldSeparator <= 8)
+            {
+                return SessionReadResult::ParseFailed;
+            }
+
+            const String indexText =
+                key.substring(8, fieldSeparator);
+
+            uint32_t networkIndex = 0;
+
+            if (!ParseUnsigned(
+                    indexText,
+                    networkIndex) ||
+                networkIndex >=
+                    WiFiMeasurementSummary::NetworkCapacity)
+            {
+                return SessionReadResult::ParseFailed;
+            }
+
+            const String field =
+                key.substring(fieldSeparator + 1);
+
+            WiFiMeasuredNetwork &network =
+                session.summary.networks[
+                    networkIndex];
+
+            uint16_t fieldBit = 0;
+
+            if (field == "ssid")
+            {
+                fieldBit = NetworkFieldSsid;
+
+                if (!DecodeStorageText(
+                        value,
+                        network.ssid,
+                        WiFiMeasuredNetwork::SsidCapacity))
+                {
+                    return SessionReadResult::ParseFailed;
+                }
+            }
+            else if (field == "bssid")
+            {
+                fieldBit = NetworkFieldBssid;
+
+                if (!ParseBssid(
+                        value,
+                        network.bssid))
+                {
+                    return SessionReadResult::ParseFailed;
+                }
+            }
+            else if (field == "channel")
+            {
+                fieldBit = NetworkFieldChannel;
+
+                if (!ParseUnsigned(value, parsed) ||
+                    parsed > 255)
+                {
+                    return SessionReadResult::ParseFailed;
+                }
+
+                network.channel =
+                    static_cast<uint8_t>(parsed);
+            }
+            else if (field == "security")
+            {
+                fieldBit = NetworkFieldSecurity;
+
+                if (!ParseSecurityText(
+                        value,
+                        network.security))
+                {
+                    return SessionReadResult::ParseFailed;
+                }
+            }
+            else if (field == "hidden")
+            {
+                fieldBit = NetworkFieldHidden;
+
+                if (!ParseBoolean(
+                        value,
+                        network.hidden))
+                {
+                    return SessionReadResult::ParseFailed;
+                }
+            }
+            else if (field == "seen")
+            {
+                fieldBit = NetworkFieldSeen;
+
+                if (!ParseUnsigned(value, parsed) ||
+                    parsed == 0 ||
+                    parsed > 255)
+                {
+                    return SessionReadResult::ParseFailed;
+                }
+
+                network.seenCount =
+                    static_cast<uint8_t>(parsed);
+            }
+            else if (field == "rssi_avg")
+            {
+                fieldBit = NetworkFieldAverageRssi;
+
+                if (!ParseRssi(
+                        value,
+                        network.averageRssi))
+                {
+                    return SessionReadResult::ParseFailed;
+                }
+            }
+            else if (field == "rssi_min")
+            {
+                fieldBit = NetworkFieldMinimumRssi;
+
+                if (!ParseRssi(
+                        value,
+                        network.minimumRssi))
+                {
+                    return SessionReadResult::ParseFailed;
+                }
+            }
+            else if (field == "rssi_max")
+            {
+                fieldBit = NetworkFieldMaximumRssi;
+
+                if (!ParseRssi(
+                        value,
+                        network.maximumRssi))
+                {
+                    return SessionReadResult::ParseFailed;
+                }
+            }
+            else
+            {
+                return SessionReadResult::ParseFailed;
+            }
+
+            if ((networkFieldMask[networkIndex] &
+                 fieldBit) != 0)
+            {
+                return SessionReadResult::ParseFailed;
+            }
+
+            networkFieldMask[networkIndex] |=
+                fieldBit;
+        }
         // Unknown fields are tolerated to preserve forward
         // compatibility within a supported format version.
     }
@@ -1414,6 +1957,7 @@ StorageService::ParseMeasurementSession(
 
     if (version != 1 &&
         version != 2 &&
+        version != 3 &&
         version != CurrentSessionFormatVersion)
     {
         return SessionReadResult::UnsupportedVersion;
@@ -1463,6 +2007,64 @@ StorageService::ParseMeasurementSession(
         session.capturedTimeValid = false;
         session.capturedEpoch = 0;
         session.capturedLocal[0] = '\0';
+    }
+
+    if (version >= 4)
+    {
+        complete =
+            complete &&
+            observedNetworkCountSeen;
+
+        if (complete)
+        {
+            for (uint8_t index = 0;
+                 index <
+                     WiFiMeasurementSummary::NetworkCapacity;
+                 ++index)
+            {
+                const bool expected =
+                    index <
+                    session.summary.observedNetworkCount;
+
+                if (expected)
+                {
+                    complete =
+                        complete &&
+                        networkFieldMask[index] ==
+                            NetworkFieldAll;
+
+                    WiFiMeasuredNetwork &network =
+                        session.summary.networks[index];
+
+                    if (complete)
+                    {
+                        complete =
+                            network.seenCount > 0 &&
+                            network.seenCount <=
+                                session.summary.
+                                    completedScanCount &&
+                            network.minimumRssi <=
+                                network.averageRssi &&
+                            network.averageRssi <=
+                                network.maximumRssi;
+                    }
+
+                    network.signalQuality =
+                        ClassifyStoredSignal(
+                            network.averageRssi);
+                }
+                else
+                {
+                    complete =
+                        complete &&
+                        networkFieldMask[index] == 0;
+                }
+            }
+        }
+    }
+    else
+    {
+        session.summary.observedNetworkCount = 0;
     }
 
     for (uint8_t index = 0;
@@ -1529,7 +2131,11 @@ bool StorageService::VerifyTemporarySession(
         return false;
     }
 
-    StoredWiFiMeasurementSession verified{};
+    StoredWiFiMeasurementSession &verified =
+        storageVerificationScratch;
+
+    verified = emptyStoredSession;
+
     const SessionReadResult result =
         ParseMeasurementSession(file, verified);
 
@@ -1553,12 +2159,54 @@ bool StorageService::VerifyTemporarySession(
         std::strcmp(
             verified.capturedLocal,
             expected.capturedLocal) != 0 ||
+        verified.summary.observedNetworkCount !=
+            expected.summary.observedNetworkCount ||
         !verified.integrityVerified)
     {
         Serial.println(
             "StorageService: Temporary verification "
             "failed - record identity mismatch");
         return false;
+    }
+
+    for (uint8_t index = 0;
+         index < expected.summary.observedNetworkCount;
+         ++index)
+    {
+        const WiFiMeasuredNetwork &expectedNetwork =
+            expected.summary.networks[index];
+
+        const WiFiMeasuredNetwork &verifiedNetwork =
+            verified.summary.networks[index];
+
+        if (std::strcmp(
+                expectedNetwork.ssid,
+                verifiedNetwork.ssid) != 0 ||
+            std::memcmp(
+                expectedNetwork.bssid,
+                verifiedNetwork.bssid,
+                WiFiMeasuredNetwork::BssidLength) != 0 ||
+            expectedNetwork.channel !=
+                verifiedNetwork.channel ||
+            expectedNetwork.security !=
+                verifiedNetwork.security ||
+            expectedNetwork.hidden !=
+                verifiedNetwork.hidden ||
+            expectedNetwork.seenCount !=
+                verifiedNetwork.seenCount ||
+            expectedNetwork.averageRssi !=
+                verifiedNetwork.averageRssi ||
+            expectedNetwork.minimumRssi !=
+                verifiedNetwork.minimumRssi ||
+            expectedNetwork.maximumRssi !=
+                verifiedNetwork.maximumRssi)
+        {
+            Serial.printf(
+                "StorageService: Temporary verification "
+                "failed - network %u round-trip mismatch\n",
+                index);
+            return false;
+        }
     }
 
     Serial.printf(
@@ -1623,6 +2271,11 @@ bool StorageService::WriteSummaryFields(
             crc,
             "network_count=%u\n",
             summary.networkCount) ||
+        !WriteCrcLine(
+            file,
+            crc,
+            "observed_network_count=%u\n",
+            summary.observedNetworkCount) ||
         !WriteCrcLine(
             file,
             crc,
@@ -1717,6 +2370,94 @@ bool StorageService::WriteSummaryFields(
                     info.strongestRssi),
                 static_cast<long>(
                     info.averageRssi)))
+        {
+            return false;
+        }
+    }
+
+    for (uint8_t index = 0;
+         index < summary.observedNetworkCount &&
+         index < WiFiMeasurementSummary::NetworkCapacity;
+         ++index)
+    {
+        const WiFiMeasuredNetwork &network =
+            summary.networks[index];
+
+        char encodedSsid[
+            WiFiMeasuredNetwork::SsidCapacity * 3] = {};
+
+        if (!EncodeStorageText(
+                network.ssid,
+                encodedSsid,
+                sizeof(encodedSsid)))
+        {
+            return false;
+        }
+
+        if (!WriteCrcLine(
+                file,
+                crc,
+                "network_%u_ssid=%s\n",
+                index,
+                encodedSsid) ||
+            !WriteCrcLine(
+                file,
+                crc,
+                "network_%u_bssid="
+                "%02X:%02X:%02X:%02X:%02X:%02X\n",
+                index,
+                network.bssid[0],
+                network.bssid[1],
+                network.bssid[2],
+                network.bssid[3],
+                network.bssid[4],
+                network.bssid[5]) ||
+            !WriteCrcLine(
+                file,
+                crc,
+                "network_%u_channel=%u\n",
+                index,
+                network.channel) ||
+            !WriteCrcLine(
+                file,
+                crc,
+                "network_%u_security=%s\n",
+                index,
+                SecurityToStorageText(
+                    network.security)) ||
+            !WriteCrcLine(
+                file,
+                crc,
+                "network_%u_hidden=%u\n",
+                index,
+                network.hidden ? 1 : 0) ||
+            !WriteCrcLine(
+                file,
+                crc,
+                "network_%u_seen=%u\n",
+                index,
+                network.seenCount) ||
+            !WriteCrcLine(
+                file,
+                crc,
+                "network_%u_rssi_avg=%ld\n",
+                index,
+                static_cast<long>(
+                    network.averageRssi)) ||
+            !WriteCrcLine(
+                file,
+                crc,
+                "network_%u_rssi_min=%ld\n",
+                index,
+                static_cast<long>(
+                    network.minimumRssi)) ||
+            !WriteCrcLine(
+                file,
+                crc,
+                "network_%u_rssi_max=%ld\n",
+                index,
+                static_cast<long>(
+                    network.maximumRssi)))
         {
             return false;
         }
@@ -1873,6 +2614,8 @@ void StorageService::UpdateIndexMetadata(
         session.capturedEpoch;
     entry.networkCount =
         session.summary.networkCount;
+    entry.observedNetworkCount =
+        session.summary.observedNetworkCount;
     entry.bestChannel =
         session.summary.recommendation.bestChannel;
     entry.confidence =
@@ -1882,7 +2625,7 @@ void StorageService::UpdateIndexMetadata(
 void StorageService::InvalidateLoadedSession()
 {
     loadedSession =
-        StoredWiFiMeasurementSession{};
+        emptyStoredSession;
     loadedSessionIndex =
         InvalidLoadedSessionIndex;
 }

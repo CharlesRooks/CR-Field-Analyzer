@@ -4,6 +4,15 @@
 #include <WiFi.h>
 #include <cstring>
 
+namespace
+{
+    // WiFiMeasurementSummary now contains the full AP inventory and is
+    // several kilobytes. Keep one static default instance so resets copy
+    // from static storage instead of creating a large brace-initialized
+    // temporary on the Arduino loop-task stack.
+    const WiFiMeasurementSummary EmptyMeasurementSummary{};
+}
+
 #include "../../Core/Messaging/MessageBus.h"
 #include "../Storage/StorageService.h"
 
@@ -31,6 +40,20 @@ WiFiChannelRecommendation
 WiFiMeasurementSummary
     WiFiService::measurementSummary{};
 
+WiFiMeasuredNetwork
+    WiFiService::measuredNetworks[
+        WiFiMeasurementSummary::NetworkCapacity] = {};
+
+int16_t
+    WiFiService::measuredNetworkRssiTotals[
+        WiFiMeasurementSummary::NetworkCapacity] = {};
+
+uint8_t
+    WiFiService::measuredNetworkLastSeenScan[
+        WiFiMeasurementSummary::NetworkCapacity] = {};
+
+uint8_t WiFiService::measuredNetworkCount = 0;
+
 uint16_t
     WiFiService::candidateScoreHistory
         [WiFiService::CandidateChannelCount]
@@ -57,6 +80,7 @@ void WiFiService::Begin()
     ClearScoreHistory();
     ClearResults();
     ClearMeasurementSummary();
+    ClearMeasuredNetworks();
 
     measurementSessionState =
         WiFiMeasurementSessionState::Idle;
@@ -155,6 +179,7 @@ bool WiFiService::ResetMeasurementSession()
     ClearScoreHistory();
     ClearResults();
     ClearMeasurementSummary();
+    ClearMeasuredNetworks();
 
     measurementSessionState =
         WiFiMeasurementSessionState::Idle;
@@ -475,13 +500,179 @@ void WiFiService::ClearScoreHistory()
 void WiFiService::ClearMeasurementSummary()
 {
     measurementSummary =
-        WiFiMeasurementSummary{};
+        EmptyMeasurementSummary;
+}
+
+void WiFiService::ClearMeasuredNetworks()
+{
+    measuredNetworkCount = 0;
+
+    for (uint8_t index = 0;
+         index < WiFiMeasurementSummary::NetworkCapacity;
+         ++index)
+    {
+        measuredNetworks[index] =
+            WiFiMeasuredNetwork{};
+
+        measuredNetworkRssiTotals[index] = 0;
+        measuredNetworkLastSeenScan[index] = 0;
+    }
+}
+
+void WiFiService::AccumulateMeasuredNetworks()
+{
+    const uint8_t scanOrdinal =
+        measurementSessionCompletedScanCount + 1;
+
+    for (uint8_t networkIndex = 0;
+         networkIndex < networkCount;
+         ++networkIndex)
+    {
+        const WiFiNetworkInfo &network =
+            networks[networkIndex];
+
+        int16_t matchedIndex = -1;
+
+        for (uint8_t measuredIndex = 0;
+             measuredIndex < measuredNetworkCount;
+             ++measuredIndex)
+        {
+            if (std::memcmp(
+                    measuredNetworks[measuredIndex].bssid,
+                    network.bssid,
+                    WiFiNetworkInfo::BssidLength) == 0)
+            {
+                matchedIndex =
+                    static_cast<int16_t>(measuredIndex);
+                break;
+            }
+        }
+
+        if (matchedIndex < 0)
+        {
+            if (measuredNetworkCount >=
+                WiFiMeasurementSummary::NetworkCapacity)
+            {
+                Serial.println(
+                    "WiFiService: Measurement network inventory "
+                    "capacity reached; additional BSSIDs omitted");
+                break;
+            }
+
+            matchedIndex =
+                static_cast<int16_t>(
+                    measuredNetworkCount);
+
+            WiFiMeasuredNetwork &measured =
+                measuredNetworks[measuredNetworkCount];
+
+            std::strncpy(
+                measured.ssid,
+                network.ssid,
+                WiFiMeasuredNetwork::SsidCapacity - 1);
+
+            measured.ssid[
+                WiFiMeasuredNetwork::SsidCapacity - 1] = '\0';
+
+            std::memcpy(
+                measured.bssid,
+                network.bssid,
+                WiFiMeasuredNetwork::BssidLength);
+
+            measured.channel = network.channel;
+            measured.security = network.security;
+            measured.hidden = network.hidden;
+            measured.seenCount = 0;
+            measured.averageRssi = network.rssi;
+            measured.minimumRssi = network.rssi;
+            measured.maximumRssi = network.rssi;
+            measured.signalQuality = network.signalQuality;
+
+            measuredNetworkRssiTotals[
+                measuredNetworkCount] = 0;
+
+            measuredNetworkLastSeenScan[
+                measuredNetworkCount] = 0;
+
+            ++measuredNetworkCount;
+        }
+
+        const uint8_t index =
+            static_cast<uint8_t>(matchedIndex);
+
+        // Count a BSSID at most once per successful scan.
+        if (measuredNetworkLastSeenScan[index] ==
+            scanOrdinal)
+        {
+            continue;
+        }
+
+        WiFiMeasuredNetwork &measured =
+            measuredNetworks[index];
+
+        if (network.ssid[0] != '\0')
+        {
+            std::strncpy(
+                measured.ssid,
+                network.ssid,
+                WiFiMeasuredNetwork::SsidCapacity - 1);
+
+            measured.ssid[
+                WiFiMeasuredNetwork::SsidCapacity - 1] = '\0';
+
+            measured.hidden = false;
+        }
+
+        if (network.channel != 0)
+        {
+            measured.channel = network.channel;
+        }
+
+        measured.security = network.security;
+
+        if (measured.seenCount == 0)
+        {
+            measured.minimumRssi = network.rssi;
+            measured.maximumRssi = network.rssi;
+        }
+        else
+        {
+            if (network.rssi < measured.minimumRssi)
+            {
+                measured.minimumRssi = network.rssi;
+            }
+
+            if (network.rssi > measured.maximumRssi)
+            {
+                measured.maximumRssi = network.rssi;
+            }
+        }
+
+        measuredNetworkRssiTotals[index] +=
+            static_cast<int16_t>(network.rssi);
+
+        if (measured.seenCount < 255)
+        {
+            ++measured.seenCount;
+        }
+
+        measuredNetworkLastSeenScan[index] =
+            scanOrdinal;
+    }
+
+    Serial.printf(
+        "WiFiService: Measurement network inventory "
+        "%u unique BSSID%s after sample %u/%u\n",
+        measuredNetworkCount,
+        measuredNetworkCount == 1 ? "" : "s",
+        scanOrdinal,
+        AutomaticSessionScanCount);
 }
 
 void WiFiService::CaptureMeasurementSummary()
 {
     measurementSummary =
-        WiFiMeasurementSummary{};
+        EmptyMeasurementSummary;
 
     measurementSummary.available = true;
 
@@ -519,11 +710,37 @@ void WiFiService::CaptureMeasurementSummary()
             channelInfo[channel];
     }
 
+    measurementSummary.observedNetworkCount =
+        measuredNetworkCount;
+
+    for (uint8_t index = 0;
+         index < measuredNetworkCount;
+         ++index)
+    {
+        WiFiMeasuredNetwork measured =
+            measuredNetworks[index];
+
+        if (measured.seenCount > 0)
+        {
+            measured.averageRssi =
+                measuredNetworkRssiTotals[index] /
+                measured.seenCount;
+
+            measured.signalQuality =
+                ClassifySignal(
+                    measured.averageRssi);
+        }
+
+        measurementSummary.networks[index] =
+            measured;
+    }
+
     Serial.printf(
         "WiFiService: Session summary captured - "
-        "%u networks, %u occupied channels, "
-        "best CH %u, confidence %s\n",
+        "%u networks in final scan, %u unique BSSIDs, "
+        "%u occupied channels, best CH %u, confidence %s\n",
         measurementSummary.networkCount,
+        measurementSummary.observedNetworkCount,
         measurementSummary.occupiedChannelCount,
         measurementSummary.recommendation.bestChannel,
         ConfidenceToText(
@@ -898,6 +1115,10 @@ void WiFiService::HandleAutomaticScanCompleted()
 
     // A successful sample clears the consecutive retry count.
     automaticSessionRetryCount = 0;
+
+    // Capture the AP/BSSID inventory before the live result cache is
+    // replaced by the next scan.
+    AccumulateMeasuredNetworks();
 
     if (measurementSessionCompletedScanCount <
         AutomaticSessionScanCount)

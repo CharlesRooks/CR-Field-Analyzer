@@ -80,6 +80,38 @@ struct WiFiNetworkInfo
     bool hidden = false;
 };
 
+struct WiFiMeasuredNetwork
+{
+    static constexpr uint8_t SsidCapacity =
+        WiFiNetworkInfo::SsidCapacity;
+
+    static constexpr uint8_t BssidLength =
+        WiFiNetworkInfo::BssidLength;
+
+    char ssid[SsidCapacity] = {};
+    uint8_t bssid[BssidLength] = {};
+
+    uint8_t channel = 0;
+
+    WiFiSecurity security =
+        WiFiSecurity::Unknown;
+
+    bool hidden = false;
+
+    // Number of successful scans in the measurement session
+    // where this BSSID was observed.
+    uint8_t seenCount = 0;
+
+    // Signal statistics calculated across the successful scans
+    // where the BSSID was present.
+    int32_t averageRssi = -127;
+    int32_t minimumRssi = -127;
+    int32_t maximumRssi = -127;
+
+    WiFiSignalQuality signalQuality =
+        WiFiSignalQuality::Unknown;
+};
+
 struct WiFiChannelInfo
 {
     uint8_t channel = 0;
@@ -129,10 +161,23 @@ struct WiFiMeasurementSummary
     static constexpr uint8_t CandidateCapacity = 3;
     static constexpr uint8_t ChannelCapacity = 15;
 
+    // A measurement session can see more unique BSSIDs than any
+    // single scan because APs may appear or disappear between the
+    // three successful samples.
+    static constexpr uint8_t NetworkCapacity = 128;
+
     bool available = false;
 
     uint8_t completedScanCount = 0;
+
+    // Number of networks in the final successful scan. Retained
+    // for compatibility with the existing live/session summary.
     uint8_t networkCount = 0;
+
+    // Number of unique BSSIDs observed across the complete
+    // measurement session.
+    uint8_t observedNetworkCount = 0;
+
     uint8_t occupiedChannelCount = 0;
 
     WiFiChannelRecommendation recommendation{};
@@ -142,4 +187,7 @@ struct WiFiMeasurementSummary
 
     WiFiChannelInfo
         channels[ChannelCapacity] = {};
+
+    WiFiMeasuredNetwork
+        networks[NetworkCapacity] = {};
 };

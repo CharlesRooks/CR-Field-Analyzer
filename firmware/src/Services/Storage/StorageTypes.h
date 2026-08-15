@@ -10,7 +10,9 @@ struct StoredWiFiMeasurementSession
 
     // Version of the persisted text record. Version 1 is the
     // original 10.15B format; version 2 adds CRC32 integrity;
-    // version 3 adds a wall-clock capture timestamp.
+    // version 3 adds a wall-clock capture timestamp; version 4
+    // adds the per-BSSID network inventory collected across the
+    // complete measurement session.
     uint8_t formatVersion = 0;
 
     // True only when the stored record carried a checksum and
@@ -59,6 +61,7 @@ struct StoredWiFiMeasurementSessionIndex
     bool capturedTimeValid = false;
     uint32_t capturedEpoch = 0;
     uint8_t networkCount = 0;
+    uint8_t observedNetworkCount = 0;
     uint8_t bestChannel = 0;
     WiFiRecommendationConfidence confidence =
         WiFiRecommendationConfidence::Unknown;

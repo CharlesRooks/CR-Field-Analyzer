@@ -6,6 +6,7 @@
 #include <lvgl.h>
 #include <esp_system.h>
 #include "Messaging/MessageBus.h"
+#include <USB.h>
 
 #include "../Screens/SplashScreen.h"
 #include "../Services/Power/PowerService.h"
@@ -36,6 +37,9 @@ void SentinelOS::Begin()
     MessageBus::Begin();
 
     Serial.begin(115200);
+
+    USB.begin();
+
     delay(3000);
 
     instance = this;
@@ -208,6 +212,7 @@ void SentinelOS::Update()
 
     lv_timer_handler();
     delay(5);
+
 }
 
 void SentinelOS::ChangeState(AppState newState)

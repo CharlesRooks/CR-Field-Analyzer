@@ -5,62 +5,65 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 ## [Unreleased]
 
 ### Added
-- MessageBus framework for synchronous publish/subscribe communication.
-- `UserActivity`, `InputEvent`, and `NavigationChanged` event flows.
-- Core `InputEvent` contract shared by input and messaging components.
-- Navigation-change messages carrying the active `ScreenID`.
-- Subscription diagnostics for SentinelOS, NavigationManager, and PowerManager.
-- Automatic battery deep sleep after the configured idle timeout.
-- Power-source transition handling for USB and battery policies.
-- Dedicated power-architecture documentation.
+
+* MessageBus framework for synchronous publish/subscribe communication.
+* `UserActivity`, `InputEvent`, and `NavigationChanged` event flows.
+* Core `InputEvent` contract shared by input and messaging components.
+* Navigation-change messages carrying the active `ScreenID`.
+* Subscription diagnostics for SentinelOS, NavigationManager, and PowerManager.
+* Production TinyUSB composite USB architecture providing CDC serial and read-only SD Mass Storage.
+* `UsbStorageService` production integration for read-only USB Mass Storage.
+* `flash-monitor.ps1` development helper for ESP32-S3 firmware upload, application-port detection, and automatic serial monitoring.
 
 ### Changed
-- InputManager now publishes completed touch gestures and user-activity events.
-- NavigationManager now consumes `InputEvent` messages and publishes `NavigationChanged`.
-- PowerManager now receives user activity through MessageBus.
-- SentinelOS now coordinates ApplicationFrame updates from navigation-change messages.
-- `PowerManager::NotifyActivity()` is private to prevent direct event-path bypass.
-- Message types not yet implemented are explicitly marked as reserved.
-- PowerManager now enforces the complete battery sequence: dim, display-off, and deep sleep.
-- Battery-to-USB and USB-to-battery transitions reset idle timing.
-- Power-source transitions return the display to its normal active brightness.
-- PowerService documentation now distinguishes telemetry ownership from policy, display, and sleep ownership.
 
-### Fixed
-- Normal display brightness being overwritten by the temporary dimmed brightness when the display turned off.
-- Display waking at the dimmed brightness instead of the saved normal brightness.
-- A dimmed or off display remaining dark after USB was connected.
-- Immediate dimming risk after USB was disconnected following a long USB-powered session.
+* InputManager now publishes completed touch gestures and user-activity events.
+* NavigationManager now consumes `InputEvent` messages and publishes `NavigationChanged`.
+* PowerManager now receives user activity through MessageBus.
+* SentinelOS now coordinates ApplicationFrame updates from navigation-change messages.
+* `PowerManager::NotifyActivity()` is now private to prevent direct event-path bypass.
+* Message types not yet implemented are explicitly marked as reserved.
+* Production LilyGO USB configuration now uses TinyUSB OTG mode with `ARDUINO_USB_MODE=0` and `ARDUINO_USB_CDC_ON_BOOT=1`.
+* PlatformIO serial monitoring now asserts DTR with `monitor_dtr = 1` to support reliable TinyUSB CDC output.
+* Development upload workflow now accounts for ESP32-S3 ROM-download and SentinelOS application USB re-enumeration.
 
 ### Hardened
-- Duplicate subscriptions for the same message type and handler are prevented.
-- Invalid subscriptions using `MessageType::None` or null handlers are rejected.
-- Subscription-capacity failures are surfaced through serial diagnostics.
-- MessageBus initialization and serial diagnostic ordering were corrected.
-- DisplayService now tracks temporary dimming separately from the saved normal brightness.
+
+* Duplicate subscriptions for the same message type and handler are prevented.
+* Invalid subscriptions using `MessageType::None` or null handlers are rejected.
+* Subscription-capacity failures are surfaced through serial diagnostics.
+* MessageBus initialization and serial diagnostic ordering were corrected.
+* USB Mass Storage exposes the SD card to the host as read-only media.
 
 ### Technical
-- MessageBus supports 16 fixed subscriptions without dynamic allocation.
-- Dispatch is synchronous and supports nested publication.
-- Messages are not queued, retained, or replayed.
-- Handlers are required to remain short and non-blocking.
-- The messaging layer no longer depends on InputManager.
-- USB policy disables automatic dimming, display-off, and deep sleep.
-- Battery policy defaults to 30-second dim, 60-second display-off, and 120-second deep sleep.
-- PowerManager delegates display actions to DisplayService and deep sleep to SleepService.
+
+* MessageBus supports 16 fixed subscriptions without dynamic allocation.
+* Dispatch is synchronous and supports nested publication.
+* Messages are not queued, retained, or replayed.
+* Handlers are required to remain short and non-blocking.
+* The messaging layer no longer depends on InputManager.
+* SentinelOS USB CDC and Mass Storage operate as interfaces of a single TinyUSB composite device.
+* Firmware upload uses the ESP32-S3 ROM downloader, followed by a manual hardware reset to start the TinyUSB application.
+* `flash-monitor.ps1` detects the application CDC interface after reset and launches PlatformIO monitoring automatically.
+* PlatformIO monitor configuration is standardized at 115200 baud with DTR active and RTS inactive.
 
 ### Verified
-- Swipe-left and swipe-right navigation through MessageBus.
-- Tap activity without unintended navigation.
-- Display dimming, display-off, and touch wake behaviour.
-- Full-brightness restoration from both dimmed and off states.
-- BOOT-button activity and two-second manual deep-sleep entry.
-- Automatic deep sleep while operating on battery.
-- BOOT-button wake after automatic deep sleep.
-- Battery-to-USB transition while dimmed.
-- Battery-to-USB transition while the display was off.
-- USB-to-battery transition with fresh battery-policy timing.
-- No subscription errors during hardware regression testing.
+
+* Swipe-left and swipe-right navigation through MessageBus.
+* Tap activity without unintended navigation.
+* Display dimming, display-off, and touch wake behaviour.
+* BOOT-button activity and two-second deep-sleep entry.
+* No subscription errors during hardware regression testing.
+* Full SentinelOS boot sequence captured through TinyUSB CDC.
+* Windows enumeration of CDC serial, read-only USB Mass Storage, and USB Composite Device.
+* RTC detection, valid RTC time, system-clock synchronization, and UTC-04:00 time-zone configuration.
+* SD card mounting, filesystem reporting, and saved measurement-session indexing.
+* `UsbStorageService` read-only media initialization.
+* USB power-policy detection.
+* Wi-Fi service initialization and successful startup scan.
+* Splash-to-Running application-state transition.
+* End-to-end `flash-monitor.ps1` upload, manual-reset, CDC detection, and serial-monitor workflow.
+
 
 ## [0.5.0-alpha] - 2026-07-11
 

@@ -115,6 +115,24 @@ private:
     static WiFiMeasurementSummary
         measurementSummary;
 
+    // Unique-BSSID accumulator for the current automatic
+    // measurement session. RSSI totals are kept separately so the
+    // persisted summary can store an exact integer average without
+    // carrying accumulation-only fields.
+    static WiFiMeasuredNetwork
+        measuredNetworks[
+            WiFiMeasurementSummary::NetworkCapacity];
+
+    static int16_t
+        measuredNetworkRssiTotals[
+            WiFiMeasurementSummary::NetworkCapacity];
+
+    static uint8_t
+        measuredNetworkLastSeenScan[
+            WiFiMeasurementSummary::NetworkCapacity];
+
+    static uint8_t measuredNetworkCount;
+
     static uint16_t
         candidateScoreHistory
             [CandidateChannelCount]
@@ -139,6 +157,8 @@ private:
     static void ClearChannelAssessments();
     static void ClearScoreHistory();
     static void ClearMeasurementSummary();
+    static void ClearMeasuredNetworks();
+    static void AccumulateMeasuredNetworks();
     static void CaptureMeasurementSummary();
 
     static void CopyResults(int16_t resultCount);
