@@ -42,6 +42,12 @@ private:
     static void HandleHistoryButton(
         lv_event_t *event);
 
+    static void HandleSurveyPointButton(
+        lv_event_t *event);
+
+    static void HandleSurveyPointKeyboard(
+        lv_event_t *event);
+
     lv_obj_t *statusLabel = nullptr;
     lv_obj_t *networkList = nullptr;
 
@@ -56,6 +62,10 @@ private:
 
     lv_obj_t *historyButton = nullptr;
     lv_obj_t *historyButtonLabel = nullptr;
+
+    lv_obj_t *surveyPointEditor = nullptr;
+    lv_obj_t *surveyPointTextArea = nullptr;
+    lv_obj_t *surveyPointKeyboard = nullptr;
 
     bool refreshPending = true;
 
@@ -87,6 +97,13 @@ private:
     void UpdateViewButtons();
     void UpdateHistoryControls();
 
+    void AddSurveyPointControl();
+
+    void OpenSurveyPointEditor();
+
+    void CloseSurveyPointEditor(
+        bool save);
+
     void ShowNetworkResults(
         uint8_t networkCount);
 
@@ -99,7 +116,8 @@ private:
         uint32_t sessionId,
         bool capturedTimeValid,
         uint32_t capturedEpoch,
-        uint32_t completedAtMs);
+        uint32_t completedAtMs,
+        const char *surveyPoint);
 
     void AddMessageRow(
         const char *text);

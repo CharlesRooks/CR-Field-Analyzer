@@ -480,6 +480,13 @@ void ScanScreen::RefreshFromService()
 
     lv_obj_clean(networkList);
 
+    if (!reviewingSavedSession &&
+        state != WiFiScanState::Scanning &&
+        !WiFiService::IsAutomaticMeasurementSessionActive())
+    {
+        AddSurveyPointControl();
+    }
+
     switch (state)
     {
         case WiFiScanState::Idle:
@@ -936,7 +943,8 @@ void ScanScreen::ShowNetworkResults(
                 saved->sessionId,
                 saved->capturedTimeValid,
                 saved->capturedEpoch,
-                saved->completedAtMs);
+                saved->completedAtMs,
+                saved->summary.surveyPoint);
 
             const WiFiMeasurementSummary &summary =
                 saved->summary;
@@ -1082,7 +1090,8 @@ void ScanScreen::ShowChannelResults()
                 saved->sessionId,
                 saved->capturedTimeValid,
                 saved->capturedEpoch,
-                saved->completedAtMs);
+                saved->completedAtMs,
+                saved->summary.surveyPoint);
 
             ShowMeasurementSummary(
                 saved->summary);
@@ -1193,8 +1202,23 @@ void ScanScreen::AddSavedSessionHeader(
     uint32_t sessionId,
     bool capturedTimeValid,
     uint32_t capturedEpoch,
-    uint32_t completedAtMs)
+    uint32_t completedAtMs,
+    const char *surveyPoint)
 {
+    if (surveyPoint != nullptr &&
+        surveyPoint[0] != '\0')
+    {
+        char pointText[64];
+
+        std::snprintf(
+            pointText,
+            sizeof(pointText),
+            "SURVEY POINT: %s",
+            surveyPoint);
+
+        AddSectionLabel(pointText);
+    }
+
     char text[96];
 
     if (capturedTimeValid &&
@@ -1373,6 +1397,263 @@ void ScanScreen::AddNetworkRow(
         label,
         LV_OPA_30,
         0);
+}
+
+void ScanScreen::AddSurveyPointControl()
+{
+    const char *surveyPoint =
+        WiFiService::GetMeasurementSurveyPoint();
+
+    char text[64];
+
+    if (surveyPoint != nullptr &&
+        surveyPoint[0] != '\0')
+    {
+        std::snprintf(
+            text,
+            sizeof(text),
+            "Point: %s",
+            surveyPoint);
+    }
+    else
+    {
+        std::snprintf(
+            text,
+            sizeof(text),
+            "Point: Set survey location");
+    }
+
+    lv_obj_t *button =
+        lv_btn_create(networkList);
+
+    ConfigureControlButton(button);
+
+    lv_obj_set_width(
+        button,
+        lv_pct(100));
+
+    lv_obj_set_height(
+        button,
+        30);
+
+    lv_obj_add_event_cb(
+        button,
+        ScanScreen::HandleSurveyPointButton,
+        LV_EVENT_CLICKED,
+        nullptr);
+
+    lv_obj_t *label =
+        lv_label_create(button);
+
+    lv_label_set_text(
+        label,
+        text);
+
+    ConfigureControlLabel(label);
+
+    lv_obj_set_width(
+        label,
+        lv_pct(100));
+
+    lv_label_set_long_mode(
+        label,
+        LV_LABEL_LONG_DOT);
+
+    lv_obj_set_style_text_align(
+        label,
+        LV_TEXT_ALIGN_CENTER,
+        0);
+
+    lv_obj_center(label);
+}
+
+void ScanScreen::HandleSurveyPointButton(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr ||
+        lv_event_get_code(event) != LV_EVENT_CLICKED)
+    {
+        return;
+    }
+
+    instance->OpenSurveyPointEditor();
+}
+
+void ScanScreen::OpenSurveyPointEditor()
+{
+    if (surveyPointEditor != nullptr)
+    {
+        return;
+    }
+
+    lv_obj_t *parent = GetContentArea();
+
+    if (parent == nullptr)
+    {
+        return;
+    }
+
+    surveyPointEditor =
+        lv_obj_create(parent);
+
+    lv_obj_set_size(
+        surveyPointEditor,
+        lv_pct(100),
+        lv_pct(100));
+
+    lv_obj_center(surveyPointEditor);
+
+    lv_obj_set_style_pad_all(
+        surveyPointEditor,
+        4,
+        0);
+
+    lv_obj_set_flex_flow(
+        surveyPointEditor,
+        LV_FLEX_FLOW_COLUMN);
+
+    lv_obj_clear_flag(
+        surveyPointEditor,
+        LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *title =
+        lv_label_create(surveyPointEditor);
+
+    lv_label_set_text(
+        title,
+        "Survey Point");
+
+    surveyPointTextArea =
+        lv_textarea_create(
+            surveyPointEditor);
+
+    lv_obj_set_width(
+        surveyPointTextArea,
+        lv_pct(100));
+
+    lv_obj_set_height(
+        surveyPointTextArea,
+        32);
+
+    lv_textarea_set_one_line(
+        surveyPointTextArea,
+        true);
+
+    lv_textarea_set_max_length(
+        surveyPointTextArea,
+        WiFiMeasurementSummary::
+            SurveyPointCapacity - 1);
+
+    lv_textarea_set_placeholder_text(
+        surveyPointTextArea,
+        "e.g. Reception");
+
+    const char *current =
+        WiFiService::
+            GetMeasurementSurveyPoint();
+
+    if (current != nullptr)
+    {
+        lv_textarea_set_text(
+            surveyPointTextArea,
+            current);
+    }
+
+    surveyPointKeyboard =
+        lv_keyboard_create(
+            surveyPointEditor);
+
+    lv_obj_set_width(
+        surveyPointKeyboard,
+        lv_pct(100));
+
+    lv_obj_set_flex_grow(
+        surveyPointKeyboard,
+        1);
+
+    lv_keyboard_set_textarea(
+        surveyPointKeyboard,
+        surveyPointTextArea);
+
+    lv_obj_add_event_cb(
+        surveyPointKeyboard,
+        ScanScreen::HandleSurveyPointKeyboard,
+        LV_EVENT_READY,
+        nullptr);
+
+    lv_obj_add_event_cb(
+        surveyPointKeyboard,
+        ScanScreen::HandleSurveyPointKeyboard,
+        LV_EVENT_CANCEL,
+        nullptr);
+
+    lv_obj_move_foreground(
+        surveyPointEditor);
+}
+
+void ScanScreen::CloseSurveyPointEditor(
+    bool save)
+{
+    if (surveyPointEditor == nullptr)
+    {
+        return;
+    }
+
+    if (save &&
+        surveyPointTextArea != nullptr)
+    {
+        const char *text =
+            lv_textarea_get_text(
+                surveyPointTextArea);
+
+        if (!WiFiService::
+                SetMeasurementSurveyPoint(text))
+        {
+            Serial.println(
+                "ScanScreen: Survey point "
+                "could not be updated");
+        }
+    }
+
+    // Hide immediately, then allow LVGL to remove the editor
+    // safely after the keyboard event finishes.
+    lv_obj_add_flag(
+        surveyPointEditor,
+        LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_del_async(
+        surveyPointEditor);
+
+    surveyPointEditor = nullptr;
+    surveyPointTextArea = nullptr;
+    surveyPointKeyboard = nullptr;
+
+    refreshPending = true;
+}
+
+void ScanScreen::HandleSurveyPointKeyboard(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr)
+    {
+        return;
+    }
+
+    const lv_event_code_t code =
+        lv_event_get_code(event);
+
+    if (code == LV_EVENT_READY)
+    {
+        instance->CloseSurveyPointEditor(
+            true);
+    }
+    else if (code == LV_EVENT_CANCEL)
+    {
+        instance->CloseSurveyPointEditor(
+            false);
+    }
 }
 
 void ScanScreen::AddRecommendationRow(

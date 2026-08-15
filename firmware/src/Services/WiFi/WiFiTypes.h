@@ -166,6 +166,10 @@ struct WiFiMeasurementSummary
     // three successful samples.
     static constexpr uint8_t NetworkCapacity = 128;
 
+    static constexpr uint8_t SurveyPointCapacity = 32;
+
+    char surveyPoint[SurveyPointCapacity] = {};
+
     bool available = false;
 
     uint8_t completedScanCount = 0;

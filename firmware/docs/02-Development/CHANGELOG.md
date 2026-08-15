@@ -18,6 +18,10 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 * Historical network rows use the average RSSI measured across the completed measurement session.
 * History Networks now displays per-BSSID measurement details including observation count, RSSI range, and BSSID. 
 * Historical network signal strength is explicitly identified as the average RSSI across the completed measurement session.
+* Survey Point labels can now be assigned to Wi-Fi measurement sessions from the Scan screen.
+* Added an on-screen Survey Point editor using the LVGL keyboard.
+* Saved measurement-session format version 5 adds an optional site-survey point label.
+* Saved History sessions display their Survey Point label when available.
 
 ### Changed
 
@@ -35,6 +39,9 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 * Saved-session status remains visible while reviewing either Networks or Channels.
 * Saved network rows now provide expanded site-survey detail while preserving the compact live Networks presentation.
 * Historical network entries show how many successful session scans observed each BSSID and the minimum-to-maximum RSSI range recorded during the session.
+* Wi-Fi measurement summaries now retain the Survey Point label captured for the completed session.
+* New saved sessions are written using storage format version 5 while maintaining compatibility with versions 1 through 4.
+* Survey Point editing is disabled while an automatic measurement session is active.
 
 ### Hardened
 
@@ -45,6 +52,9 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 * USB Mass Storage exposes the SD card to the host as read-only media.
 * `flash-monitor.ps1` now allows additional time for the TinyUSB CDC interface to stabilize after application reset.
 * CDC monitor startup re-detects the SentinelOS COM port and retries when Windows temporarily removes or re-enumerates the USB serial interface.
+* Legacy version-1 through version-4 saved sessions continue to load without requiring Survey Point metadata.
+* Version-5 session parsing validates and restores the persisted Survey Point field.
+* Temporary storage round-trip verification now includes the Survey Point label.
 
 ### Technical
 
@@ -82,6 +92,12 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 * Expanded History network rows remain readable and usable on the physical display.
 * Version-4 saved measurement sessions correctly expose detailed per-BSSID survey data.
 * Legacy saved sessions without network inventory continue to fail gracefully with an explanatory message.
+* Survey Point control fits the LilyGO AMOLED Scan screen without materially reducing usable results space.
+* On-screen Survey Point keyboard is usable on the physical device.
+* Survey Point labels persist through completed three-scan measurement sessions.
+* Version-5 Survey Point labels are written to SD storage and restored after reboot.
+* Survey Point labels display correctly in both History Networks and Channels views.
+* Existing version-4 saved sessions remain readable and continue to display normally without Survey Point labels.
 
 
 ## [0.5.0-alpha] - 2026-07-11

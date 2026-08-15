@@ -1385,6 +1385,7 @@ StorageService::ParseMeasurementSession(
     bool historySamplesSeen = false;
     bool confidenceSeen = false;
     bool uniqueSeen = false;
+    bool surveyPointSeen = false;
 
     bool candidateSeen[
         WiFiMeasurementSummary::CandidateCapacity] = {};
@@ -1519,6 +1520,45 @@ StorageService::ParseMeasurementSession(
 
             capturedLocalSeen = true;
         }
+
+        else if (key == "captured_local")
+        {
+            if (capturedLocalSeen ||
+                value.length() == 0 ||
+                value.length() >=
+                    StoredWiFiMeasurementSession::
+                        CapturedLocalCapacity)
+            {
+                return SessionReadResult::ParseFailed;
+            }
+
+            std::strncpy(
+                session.capturedLocal,
+                value.c_str(),
+                StoredWiFiMeasurementSession::
+                    CapturedLocalCapacity - 1);
+
+            session.capturedLocal[
+                StoredWiFiMeasurementSession::
+                    CapturedLocalCapacity - 1] = '\0';
+
+            capturedLocalSeen = true;
+        }
+        else if (key == "survey_point")
+        {
+            if (surveyPointSeen ||
+                !DecodeStorageText(
+                    value,
+                    session.summary.surveyPoint,
+                    WiFiMeasurementSummary::
+                        SurveyPointCapacity))
+            {
+                return SessionReadResult::ParseFailed;
+            }
+
+            surveyPointSeen = true;
+        }
+
         else if (key == "completed_at_ms")
         {
             if (completedAtSeen ||
@@ -1958,6 +1998,7 @@ StorageService::ParseMeasurementSession(
     if (version != 1 &&
         version != 2 &&
         version != 3 &&
+        version != 4 &&
         version != CurrentSessionFormatVersion)
     {
         return SessionReadResult::UnsupportedVersion;
@@ -2067,6 +2108,17 @@ StorageService::ParseMeasurementSession(
         session.summary.observedNetworkCount = 0;
     }
 
+    if (version >= 5)
+    {
+        complete =
+            complete &&
+            surveyPointSeen;
+    }
+    else
+    {
+        session.summary.surveyPoint[0] = '\0';
+    }
+
     for (uint8_t index = 0;
          index <
              WiFiMeasurementSummary::CandidateCapacity;
@@ -2159,6 +2211,9 @@ bool StorageService::VerifyTemporarySession(
         std::strcmp(
             verified.capturedLocal,
             expected.capturedLocal) != 0 ||
+        std::strcmp(
+            verified.summary.surveyPoint,
+            expected.summary.surveyPoint) != 0 ||
         verified.summary.observedNetworkCount !=
             expected.summary.observedNetworkCount ||
         !verified.integrityVerified)
@@ -2226,6 +2281,17 @@ bool StorageService::WriteSummaryFields(
 
     uint32_t crc = Crc32Initial;
 
+    char encodedSurveyPoint[
+        WiFiMeasurementSummary::SurveyPointCapacity * 3] = {};
+
+    if (!EncodeStorageText(
+            summary.surveyPoint,
+            encodedSurveyPoint,
+            sizeof(encodedSurveyPoint)))
+    {
+        return false;
+    }
+
     if (!WriteCrcLine(
             file,
             crc,
@@ -2255,6 +2321,11 @@ bool StorageService::WriteSummaryFields(
             session.capturedTimeValid
                 ? session.capturedLocal
                 : "unavailable") ||
+        !WriteCrcLine(
+            file,
+            crc,
+            "survey_point=%s\n",
+            encodedSurveyPoint) ||
         !WriteCrcLine(
             file,
             crc,

@@ -40,6 +40,9 @@ WiFiChannelRecommendation
 WiFiMeasurementSummary
     WiFiService::measurementSummary{};
 
+char WiFiService::measurementSurveyPoint[
+    WiFiMeasurementSummary::SurveyPointCapacity] = {};
+
 WiFiMeasuredNetwork
     WiFiService::measuredNetworks[
         WiFiMeasurementSummary::NetworkCapacity] = {};
@@ -676,6 +679,16 @@ void WiFiService::CaptureMeasurementSummary()
 
     measurementSummary.available = true;
 
+    std::strncpy(
+        measurementSummary.surveyPoint,
+        measurementSurveyPoint,
+        WiFiMeasurementSummary::
+            SurveyPointCapacity - 1);
+
+    measurementSummary.surveyPoint[
+        WiFiMeasurementSummary::
+            SurveyPointCapacity - 1] = '\0';
+
     measurementSummary.completedScanCount =
         measurementSessionCompletedScanCount;
 
@@ -1246,6 +1259,34 @@ bool WiFiService::HasReachedDeadline(
 {
     return static_cast<int32_t>(
                nowMs - deadlineMs) >= 0;
+}
+
+bool WiFiService::SetMeasurementSurveyPoint(
+    const char *surveyPoint)
+{
+    if (surveyPoint == nullptr ||
+        state == WiFiScanState::Scanning ||
+        IsAutomaticMeasurementSessionActive())
+    {
+        return false;
+    }
+
+    std::strncpy(
+        measurementSurveyPoint,
+        surveyPoint,
+        WiFiMeasurementSummary::
+            SurveyPointCapacity - 1);
+
+    measurementSurveyPoint[
+        WiFiMeasurementSummary::
+            SurveyPointCapacity - 1] = '\0';
+
+    return true;
+}
+
+const char *WiFiService::GetMeasurementSurveyPoint()
+{
+    return measurementSurveyPoint;
 }
 
 uint16_t WiFiService::CalculateAverageScore(

@@ -69,6 +69,11 @@ public:
         GetMeasurementSessionCompletedScanCount();
 
     static bool IsAutomaticMeasurementSessionActive();
+    static bool SetMeasurementSurveyPoint(
+        const char *surveyPoint);
+
+    static const char *GetMeasurementSurveyPoint();
+
     static uint8_t GetNetworkCount();
 
     static const WiFiNetworkInfo *GetNetwork(
@@ -114,6 +119,9 @@ private:
 
     static WiFiMeasurementSummary
         measurementSummary;
+
+    static char measurementSurveyPoint[
+        WiFiMeasurementSummary::SurveyPointCapacity];
 
     // Unique-BSSID accumulator for the current automatic
     // measurement session. RSSI totals are kept separately so the

@@ -11,8 +11,8 @@ struct StoredWiFiMeasurementSession
     // Version of the persisted text record. Version 1 is the
     // original 10.15B format; version 2 adds CRC32 integrity;
     // version 3 adds a wall-clock capture timestamp; version 4
-    // adds the per-BSSID network inventory collected across the
-    // complete measurement session.
+    // adds the per-BSSID network inventory; version 5 adds the
+    // optional site-survey point label.
     uint8_t formatVersion = 0;
 
     // True only when the stored record carried a checksum and
