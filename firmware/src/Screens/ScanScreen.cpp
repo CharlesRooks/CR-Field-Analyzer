@@ -1000,7 +1000,36 @@ void ScanScreen::ShowNetworkResults(
                 displayNetwork.hidden =
                     measured.hidden;
 
-                AddNetworkRow(displayNetwork);
+                char bssidText[18];
+
+                std::snprintf(
+                    bssidText,
+                    sizeof(bssidText),
+                    "%02X:%02X:%02X:%02X:%02X:%02X",
+                    static_cast<unsigned>(measured.bssid[0]),
+                    static_cast<unsigned>(measured.bssid[1]),
+                    static_cast<unsigned>(measured.bssid[2]),
+                    static_cast<unsigned>(measured.bssid[3]),
+                    static_cast<unsigned>(measured.bssid[4]),
+                    static_cast<unsigned>(measured.bssid[5]));
+
+                char detailText[128];
+
+                std::snprintf(
+                    detailText,
+                    sizeof(detailText),
+                    "Seen %u/%u scans   Range %ld to %ld dBm\n"
+                    "BSSID %s",
+                    static_cast<unsigned>(measured.seenCount),
+                    static_cast<unsigned>(summary.completedScanCount),
+                    static_cast<long>(measured.minimumRssi),
+                    static_cast<long>(measured.maximumRssi),
+                    bssidText);
+
+                AddNetworkRow(
+                    displayNetwork,
+                    detailText,
+                    true);
             }
 
             return;
@@ -1247,7 +1276,10 @@ void ScanScreen::AddMessageRow(
 }
 
 void ScanScreen::AddNetworkRow(
-    const WiFiNetworkInfo &network)
+    const WiFiNetworkInfo &network,
+    const char *detailText,
+    bool historicalAverage)
+
 {
     const char *ssid =
         network.hidden ||
@@ -1255,18 +1287,43 @@ void ScanScreen::AddNetworkRow(
             ? "<Hidden network>"
             : network.ssid;
 
-    char rowText[128];
+    char rowText[224];
 
-    std::snprintf(
-        rowText,
-        sizeof(rowText),
-        "%s\n%s   CH %u   %ld dBm   %s",
-        ssid,
-        SignalQualityToText(
-            network.signalQuality),
-        network.channel,
-        static_cast<long>(network.rssi),
-        SecurityToText(network.security));
+    const char *rssiPrefix =
+        historicalAverage
+            ? "Avg "
+            : "";
+
+    if (detailText != nullptr &&
+        detailText[0] != '\0')
+    {
+        std::snprintf(
+            rowText,
+            sizeof(rowText),
+            "%s\n%s   CH %u   %s%ld dBm   %s\n%s",
+            ssid,
+            SignalQualityToText(
+                network.signalQuality),
+            network.channel,
+            rssiPrefix,
+            static_cast<long>(network.rssi),
+            SecurityToText(network.security),
+            detailText);
+    }
+    else
+    {
+        std::snprintf(
+            rowText,
+            sizeof(rowText),
+            "%s\n%s   CH %u   %s%ld dBm   %s",
+            ssid,
+            SignalQualityToText(
+                network.signalQuality),
+            network.channel,
+            rssiPrefix,
+            static_cast<long>(network.rssi),
+            SecurityToText(network.security));
+    }
 
     lv_obj_t *label =
         lv_label_create(networkList);

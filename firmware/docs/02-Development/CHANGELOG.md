@@ -16,6 +16,8 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 * `flash-monitor.ps1` development helper for ESP32-S3 firmware upload, application-port detection, and automatic serial monitoring.
 * Saved Wi-Fi measurement sessions can now display the persisted per-BSSID network inventory in the History Networks view.
 * Historical network rows use the average RSSI measured across the completed measurement session.
+* History Networks now displays per-BSSID measurement details including observation count, RSSI range, and BSSID. 
+* Historical network signal strength is explicitly identified as the average RSSI across the completed measurement session.
 
 ### Changed
 
@@ -31,6 +33,8 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 * Wi-Fi History now supports both Networks and Channels views without leaving the selected saved session.
 * Entering History preserves the currently selected Wi-Fi presentation.
 * Saved-session status remains visible while reviewing either Networks or Channels.
+* Saved network rows now provide expanded site-survey detail while preserving the compact live Networks presentation.
+* Historical network entries show how many successful session scans observed each BSSID and the minimum-to-maximum RSSI range recorded during the session.
 
 ### Hardened
 
@@ -39,6 +43,8 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 * Subscription-capacity failures are surfaced through serial diagnostics.
 * MessageBus initialization and serial diagnostic ordering were corrected.
 * USB Mass Storage exposes the SD card to the host as read-only media.
+* `flash-monitor.ps1` now allows additional time for the TinyUSB CDC interface to stabilize after application reset.
+* CDC monitor startup re-detects the SentinelOS COM port and retries when Windows temporarily removes or re-enumerates the USB serial interface.
 
 ### Technical
 
@@ -72,6 +78,10 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 * Older/Newer saved-session navigation in both History views.
 * Correct display of version-4 saved network inventories.
 * Graceful handling of legacy saved sessions without network inventory data.
+* Historical BSSID, observation count, average RSSI, and RSSI range display on the LilyGO AMOLED.
+* Expanded History network rows remain readable and usable on the physical display.
+* Version-4 saved measurement sessions correctly expose detailed per-BSSID survey data.
+* Legacy saved sessions without network inventory continue to fail gracefully with an explanatory message.
 
 
 ## [0.5.0-alpha] - 2026-07-11

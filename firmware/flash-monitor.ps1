@@ -135,9 +135,53 @@ if (-not $monitorPort) {
 }
 
 Write-Host "SentinelOS CDC detected on $monitorPort"
-Write-Host "Opening serial monitor immediately..."
+Write-Host "Waiting for CDC port to stabilize..."
 Write-Host ""
 
-python -m platformio device monitor `
-    --port $monitorPort `
-    --baud 115200
+Start-Sleep -Milliseconds 1000
+
+$monitorAttempts = 3
+
+for ($attempt = 1; $attempt -le $monitorAttempts; $attempt++) {
+
+    # Re-detect the CDC interface in case Windows re-enumerated it.
+    $cdcDevice = Get-PnpDevice -PresentOnly -Class Ports `
+        -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.InstanceId -like "*VID_303A*" -and
+            $_.InstanceId -like "*MI_01*"
+        } |
+        Select-Object -First 1
+
+    if ($cdcDevice -and
+        $cdcDevice.FriendlyName -match '\((COM\d+)\)') {
+
+        $monitorPort = $Matches[1]
+
+        Write-Host "Opening serial monitor on $monitorPort..."
+        Write-Host ""
+
+        python -m platformio device monitor `
+            --port $monitorPort `
+            --baud 115200
+
+        if ($LASTEXITCODE -eq 0) {
+            break
+        }
+    }
+
+    if ($attempt -lt $monitorAttempts) {
+        Write-Host ""
+        Write-Host "CDC monitor attempt $attempt failed."
+        Write-Host "Waiting for Windows USB re-enumeration..."
+        Start-Sleep -Seconds 2
+    }
+}
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host ""
+    Write-Host "Unable to open the SentinelOS CDC monitor."
+    Write-Host "Current serial ports:"
+    Write-Host ""
+    python -m serial.tools.list_ports -v
+}

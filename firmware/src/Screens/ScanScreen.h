@@ -105,7 +105,9 @@ private:
         const char *text);
 
     void AddNetworkRow(
-        const WiFiNetworkInfo &network);
+        const WiFiNetworkInfo &network,
+        const char *detailText = nullptr,
+        bool historicalAverage = false);
 
     void AddRecommendationRow(
         const WiFiChannelRecommendation
