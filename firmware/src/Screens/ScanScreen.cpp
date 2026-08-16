@@ -1487,7 +1487,11 @@ void ScanScreen::OpenSurveyPointEditor()
         return;
     }
 
-    lv_obj_t *parent = GetContentArea();
+    // Use LVGL's top layer so the Survey Point editor can use the
+    // entire physical display, including the normal header and
+    // navigation-bar areas.
+    lv_obj_t *parent =
+        lv_layer_top();
 
     if (parent == nullptr)
     {
@@ -1497,12 +1501,15 @@ void ScanScreen::OpenSurveyPointEditor()
     surveyPointEditor =
         lv_obj_create(parent);
 
+    lv_obj_set_pos(
+        surveyPointEditor,
+        0,
+        0);
+
     lv_obj_set_size(
         surveyPointEditor,
         lv_pct(100),
         lv_pct(100));
-
-    lv_obj_center(surveyPointEditor);
 
     lv_obj_set_style_pad_all(
         surveyPointEditor,
@@ -1571,6 +1578,10 @@ void ScanScreen::OpenSurveyPointEditor()
     lv_obj_set_flex_grow(
         surveyPointKeyboard,
         1);
+    
+    lv_keyboard_set_mode(
+        surveyPointKeyboard,
+        LV_KEYBOARD_MODE_TEXT_LOWER);
 
     lv_keyboard_set_textarea(
         surveyPointKeyboard,

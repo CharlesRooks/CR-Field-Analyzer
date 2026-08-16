@@ -759,6 +759,11 @@ void WiFiService::CaptureMeasurementSummary()
         ConfidenceToText(
             measurementSummary.recommendation
                 .confidence));
+
+    // The completed summary owns its Survey Point label from this
+    // point onward. Clear the working label so the next physical
+    // survey location must be identified deliberately.
+    measurementSurveyPoint[0] = '\0';
 }
 
 void WiFiService::CopyResults(

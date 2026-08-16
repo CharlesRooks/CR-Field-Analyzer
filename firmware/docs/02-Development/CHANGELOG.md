@@ -42,6 +42,8 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 * Wi-Fi measurement summaries now retain the Survey Point label captured for the completed session.
 * New saved sessions are written using storage format version 5 while maintaining compatibility with versions 1 through 4.
 * Survey Point editing is disabled while an automatic measurement session is active.
+* Survey Point editing now uses a full-screen overlay to provide substantially larger and more accurate touch targets on the AMOLED keyboard.
+* The working Survey Point label is automatically cleared after a completed measurement summary captures it, preventing accidental reuse at the next physical survey location.
 
 ### Hardened
 
@@ -98,6 +100,9 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 * Version-5 Survey Point labels are written to SD storage and restored after reboot.
 * Survey Point labels display correctly in both History Networks and Channels views.
 * Existing version-4 saved sessions remain readable and continue to display normally without Survey Point labels.
+* Full-screen Survey Point keyboard is comfortable and accurate for text entry on the physical LilyGO AMOLED display.
+* Completed sessions retain their assigned Survey Point after the working label is cleared.
+* After a completed measurement, the Scan screen correctly returns to `Point: Set survey location` for the next survey point.
 
 
 ## [0.5.0-alpha] - 2026-07-11
