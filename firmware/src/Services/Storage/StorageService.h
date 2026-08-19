@@ -53,11 +53,18 @@ public:
     static uint64_t GetFilesystemUsedBytes();
     static uint64_t GetFilesystemFreeBytes();
 
+    static uint32_t GetNextSiteSurveyId();
+
     static bool SaveMeasurementSummary(
         const WiFiMeasurementSummary &summary,
         uint32_t completedAtMs,
         uint32_t capturedEpoch,
         const char *capturedLocal);
+
+    static bool CreateSiteSurveyRecord(
+        const char *name,
+        uint32_t createdEpoch,
+        uint32_t &surveyId);
 
     // Saved sessions are indexed newest first. GetSavedSession()
     // performs on-demand SD loading and integrity verification.
@@ -70,9 +77,10 @@ public:
         GetSavedSession(uint8_t index);
 
 private:
-    static constexpr uint8_t CurrentSessionFormatVersion = 5;
+    static constexpr uint8_t CurrentSessionFormatVersion = 6;
     static constexpr uint8_t EnumeratedSessionCapacity = 128;
     static constexpr uint8_t InvalidLoadedSessionIndex = 0xFF;
+    
 
     enum class SessionReadResult : uint8_t
     {
@@ -102,6 +110,8 @@ private:
 
     static uint8_t savedSessionCount;
     static uint32_t nextSessionId;
+    static uint32_t nextSiteSurveyId;
+    static void LoadSiteSurveySequence();
 
     static bool EnsureDirectories();
     static bool CleanupStaleTemporaryFile();
@@ -160,4 +170,14 @@ private:
     static void SetFailure(
         StorageValidationResult result,
         const char *message);
+
+    static constexpr uint8_t CurrentSiteSurveyFormatVersion = 1;
+
+    static bool WriteSiteSurveyRecord(
+        const StoredSiteSurvey &survey);
+
+    static void BuildSiteSurveyPath(
+        uint32_t surveyId,
+        char *buffer,
+        size_t bufferSize);
 };

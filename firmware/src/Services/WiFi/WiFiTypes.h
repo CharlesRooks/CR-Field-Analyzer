@@ -166,6 +166,17 @@ struct WiFiMeasurementSummary
     // three successful samples.
     static constexpr uint8_t NetworkCapacity = 128;
 
+    // Stable reference to the Site Survey that owns this
+    // measurement. Zero means the measurement is not assigned
+    // to a Site Survey.
+    uint32_t siteSurveyId = 0;
+
+    // Snapshot of the Site Survey name so individual measurement
+    // records remain human-readable even when viewed independently.
+    static constexpr uint8_t SiteSurveyNameCapacity = 48;
+
+    char siteSurveyName[SiteSurveyNameCapacity] = {};
+
     static constexpr uint8_t SurveyPointCapacity = 32;
 
     char surveyPoint[SurveyPointCapacity] = {};

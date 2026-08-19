@@ -43,6 +43,11 @@ WiFiMeasurementSummary
 char WiFiService::measurementSurveyPoint[
     WiFiMeasurementSummary::SurveyPointCapacity] = {};
 
+uint32_t WiFiService::measurementSiteSurveyId = 0;
+
+char WiFiService::measurementSiteSurveyName[
+    WiFiMeasurementSummary::SiteSurveyNameCapacity] = {};
+
 WiFiMeasuredNetwork
     WiFiService::measuredNetworks[
         WiFiMeasurementSummary::NetworkCapacity] = {};
@@ -679,6 +684,19 @@ void WiFiService::CaptureMeasurementSummary()
 
     measurementSummary.available = true;
 
+    measurementSummary.siteSurveyId =
+    measurementSiteSurveyId;
+
+    std::strncpy(
+        measurementSummary.siteSurveyName,
+        measurementSiteSurveyName,
+        WiFiMeasurementSummary::
+            SiteSurveyNameCapacity - 1);
+
+    measurementSummary.siteSurveyName[
+        WiFiMeasurementSummary::
+            SiteSurveyNameCapacity - 1] = '\0';
+
     std::strncpy(
         measurementSummary.surveyPoint,
         measurementSurveyPoint,
@@ -1285,6 +1303,44 @@ bool WiFiService::SetMeasurementSurveyPoint(
     measurementSurveyPoint[
         WiFiMeasurementSummary::
             SurveyPointCapacity - 1] = '\0';
+
+    return true;
+}
+
+bool WiFiService::SetMeasurementSiteSurvey(
+    uint32_t surveyId,
+    const char *surveyName)
+{
+    if (state == WiFiScanState::Scanning ||
+        IsAutomaticMeasurementSessionActive())
+    {
+        return false;
+    }
+
+    if (surveyId == 0)
+    {
+        measurementSiteSurveyId = 0;
+        measurementSiteSurveyName[0] = '\0';
+        return true;
+    }
+
+    if (surveyName == nullptr ||
+        surveyName[0] == '\0')
+    {
+        return false;
+    }
+
+    measurementSiteSurveyId = surveyId;
+
+    std::strncpy(
+        measurementSiteSurveyName,
+        surveyName,
+        WiFiMeasurementSummary::
+            SiteSurveyNameCapacity - 1);
+
+    measurementSiteSurveyName[
+        WiFiMeasurementSummary::
+            SiteSurveyNameCapacity - 1] = '\0';
 
     return true;
 }

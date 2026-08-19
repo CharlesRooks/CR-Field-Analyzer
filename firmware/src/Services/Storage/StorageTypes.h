@@ -12,7 +12,8 @@ struct StoredWiFiMeasurementSession
     // original 10.15B format; version 2 adds CRC32 integrity;
     // version 3 adds a wall-clock capture timestamp; version 4
     // adds the per-BSSID network inventory; version 5 adds the
-    // optional site-survey point label.
+    // optional site-survey point label; version 6 adds the
+    // parent Site Survey reference.
     uint8_t formatVersion = 0;
 
     // True only when the stored record carried a checksum and
@@ -65,5 +66,18 @@ struct StoredWiFiMeasurementSessionIndex
     uint8_t bestChannel = 0;
     WiFiRecommendationConfidence confidence =
         WiFiRecommendationConfidence::Unknown;
+};
+
+struct StoredSiteSurvey
+{
+    static constexpr uint8_t NameCapacity = 48;
+
+    bool available = false;
+    uint8_t formatVersion = 0;
+
+    uint32_t surveyId = 0;
+    uint32_t createdEpoch = 0;
+
+    char name[NameCapacity] = {};
 };
 

@@ -104,6 +104,37 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 * Completed sessions retain their assigned Survey Point after the working label is cleared.
 * After a completed measurement, the Scan screen correctly returns to `Point: Set survey location` for the next survey point.
 
+### Milestone 10.22A — Site Survey Measurement Setup
+
+#### Added
+- Added `SiteSurveyService` and `SiteSurveyManager` for long-lived Site Survey context.
+- Added persistent Site Survey records under `/sentinel/surveys/`.
+- Added independent Site Survey ID sequencing.
+- Added Site Survey ID and name to Wi-Fi measurement summaries.
+- Added measurement storage format v6 with parent Site Survey references.
+- Added dedicated `MeasurementSetupScreen`.
+- Added Site Survey and Survey Point entry before starting Wi-Fi measurements.
+- Added full-screen text editors and keyboard workflow for survey data entry.
+- Added automatic reuse of the active Site Survey across multiple Survey Points.
+- Added automatic creation of a new Site Survey when the survey name changes.
+- Added Site Survey and Survey Point information to Wi-Fi History.
+- Added `flash.ps1` for fast firmware upload without opening the serial monitor.
+
+#### Changed
+- `New` now opens Measurement Setup before starting a three-scan measurement session.
+- `Scan` now opens Measurement Setup before starting a single scan.
+- Survey Point is cleared after each completed measurement while the active Site Survey is retained.
+- Removed Site Survey and Survey Point controls from the Wi-Fi results area to preserve usable screen space.
+- Existing `flash-monitor.ps1` remains available when serial diagnostics are required.
+
+#### Verified
+- Measurement Setup layout on the physical T-Display S3 AMOLED.
+- Full-screen keyboard operation for Site Survey and Survey Point entry.
+- Multiple Survey Points under the same Site Survey.
+- Active Site Survey name retained between measurements.
+- Survey Point cleared for each new measurement.
+- Site Survey and Survey Point displayed correctly in both Networks and Channels History views.
+- Fast firmware upload using `flash.ps1`.
 
 ## [0.5.0-alpha] - 2026-07-11
 

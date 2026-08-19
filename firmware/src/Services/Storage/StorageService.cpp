@@ -16,14 +16,21 @@ namespace
     constexpr const char *SessionsDirectory =
         "/sentinel/sessions";
 
+    constexpr const char *SurveysDirectory =
+        "/sentinel/surveys";
+
     constexpr const char *TemporarySessionPath =
         "/sentinel/sessions/session.tmp";
+
+    constexpr const char *TemporarySiteSurveyPath =
+        "/sentinel/surveys/survey.tmp";
 
     constexpr const char *ValidationPath =
         "/sentinel_test.txt";
 
     constexpr const char ValidationRecord[] =
         "SentinelOS SD validation 10.15A\n";
+        
 
     constexpr uint64_t BytesPerMegabyte =
         1024ULL * 1024ULL;
@@ -629,6 +636,7 @@ uint8_t StorageService::loadedSessionIndex =
 
 uint8_t StorageService::savedSessionCount = 0;
 uint32_t StorageService::nextSessionId = 1;
+uint32_t StorageService::nextSiteSurveyId = 1;
 
 void StorageService::Begin()
 {
@@ -641,6 +649,7 @@ void StorageService::Begin()
     externalReadOnlyAccessActive = false;
     savedSessionCount = 0;
     nextSessionId = 1;
+    nextSiteSurveyId = 1;
     loadedSession = emptyStoredSession;
     loadedSessionIndex = InvalidLoadedSessionIndex;
 
@@ -701,6 +710,7 @@ void StorageService::Begin()
 
     CleanupStaleTemporaryFile();
     LoadMeasurementSessions();
+    LoadSiteSurveySequence();
 
     Serial.println(
         "StorageService: Startup validation skipped; "
@@ -978,9 +988,90 @@ bool StorageService::SaveMeasurementSummary(
     return true;
 }
 
+bool StorageService::CreateSiteSurveyRecord(
+    const char *name,
+    uint32_t createdEpoch,
+    uint32_t &surveyId)
+{
+    surveyId = 0;
+
+    if (externalReadOnlyAccessActive)
+    {
+        Serial.println(
+            "StorageService: Site Survey creation blocked "
+            "while USB Storage Mode is active");
+        return false;
+    }
+
+    if (!available ||
+        name == nullptr ||
+        name[0] == '\0')
+    {
+        return false;
+    }
+
+    if (!EnsureDirectories())
+    {
+        return false;
+    }
+
+    StoredSiteSurvey survey{};
+
+    survey.available = true;
+    survey.formatVersion =
+        CurrentSiteSurveyFormatVersion;
+    survey.surveyId =
+        nextSiteSurveyId;
+    survey.createdEpoch =
+        createdEpoch;
+
+    std::strncpy(
+        survey.name,
+        name,
+        StoredSiteSurvey::NameCapacity - 1);
+
+    survey.name[
+        StoredSiteSurvey::NameCapacity - 1] = '\0';
+
+    if (!WriteSiteSurveyRecord(survey))
+    {
+        Serial.printf(
+            "StorageService: Site Survey %lu "
+            "creation failed\n",
+            static_cast<unsigned long>(
+                survey.surveyId));
+
+        return false;
+    }
+
+    surveyId = survey.surveyId;
+
+    ++nextSiteSurveyId;
+
+    if (nextSiteSurveyId == 0)
+    {
+        nextSiteSurveyId = 1;
+    }
+
+    filesystemUsedBytes =
+        SD.usedBytes();
+
+    Serial.printf(
+        "StorageService: Site Survey %lu created: %s\n",
+        static_cast<unsigned long>(surveyId),
+        survey.name);
+
+    return true;
+}
+
 uint8_t StorageService::GetSavedSessionCount()
 {
     return savedSessionCount;
+}
+
+uint32_t StorageService::GetNextSiteSurveyId()
+{
+    return nextSiteSurveyId;
 }
 
 const StoredWiFiMeasurementSessionIndex *
@@ -1080,6 +1171,12 @@ bool StorageService::EnsureDirectories()
 
     if (!SD.exists(SessionsDirectory) &&
         !SD.mkdir(SessionsDirectory))
+    {
+        return false;
+    }
+
+    if (!SD.exists(SurveysDirectory) &&
+        !SD.mkdir(SurveysDirectory))
     {
         return false;
     }
@@ -1240,6 +1337,96 @@ void StorageService::LoadMeasurementSessions()
         static_cast<unsigned long>(nextSessionId));
 }
 
+void StorageService::LoadSiteSurveySequence()
+{
+    uint32_t maximumSurveyId = 0;
+
+    File directory =
+        SD.open(SurveysDirectory);
+
+    if (!directory ||
+        !directory.isDirectory())
+    {
+        Serial.println(
+            "StorageService: Survey directory unavailable");
+        return;
+    }
+
+    File entry =
+        directory.openNextFile();
+
+    while (entry)
+    {
+        if (!entry.isDirectory())
+        {
+            const char *path =
+                entry.name();
+
+            const char *name =
+                std::strrchr(path, '/');
+
+            name =
+                name == nullptr
+                    ? path
+                    : name + 1;
+
+            constexpr const char Prefix[] =
+                "survey_";
+
+            constexpr size_t PrefixLength =
+                sizeof(Prefix) - 1;
+
+            if (std::strncmp(
+                    name,
+                    Prefix,
+                    PrefixLength) == 0)
+            {
+                const char *numberStart =
+                    name + PrefixLength;
+
+                char *numberEnd = nullptr;
+
+                const unsigned long parsed =
+                    std::strtoul(
+                        numberStart,
+                        &numberEnd,
+                        10);
+
+                if (numberEnd != numberStart &&
+                    parsed != 0 &&
+                    std::strcmp(
+                        numberEnd,
+                        ".txt") == 0 &&
+                    parsed > maximumSurveyId)
+                {
+                    maximumSurveyId =
+                        static_cast<uint32_t>(
+                            parsed);
+                }
+            }
+        }
+
+        entry.close();
+        entry =
+            directory.openNextFile();
+    }
+
+    directory.close();
+
+    nextSiteSurveyId =
+        maximumSurveyId + 1;
+
+    if (nextSiteSurveyId == 0)
+    {
+        nextSiteSurveyId = 1;
+    }
+
+    Serial.printf(
+        "StorageService: Next Site Survey ID %lu\n",
+        static_cast<unsigned long>(
+            nextSiteSurveyId));
+}
+
 bool StorageService::WriteMeasurementSession(
     const StoredWiFiMeasurementSession &session)
 {
@@ -1317,6 +1504,123 @@ bool StorageService::WriteMeasurementSession(
     return true;
 }
 
+bool StorageService::WriteSiteSurveyRecord(
+    const StoredSiteSurvey &survey)
+{
+    if (SD.exists(TemporarySiteSurveyPath) &&
+        !SD.remove(TemporarySiteSurveyPath))
+    {
+        Serial.println(
+            "StorageService: Site Survey save failed - "
+            "stale temporary file could not be removed");
+        return false;
+    }
+
+    File file =
+        SD.open(
+            TemporarySiteSurveyPath,
+            FILE_WRITE);
+
+    if (!file)
+    {
+        return false;
+    }
+
+    uint32_t crc =
+        Crc32Initial;
+
+    char encodedName[
+        StoredSiteSurvey::NameCapacity * 3] = {};
+
+    const bool encoded =
+        EncodeStorageText(
+            survey.name,
+            encodedName,
+            sizeof(encodedName));
+
+    const bool written =
+        encoded &&
+        WriteCrcLine(
+            file,
+            crc,
+            "version=%u\n",
+            CurrentSiteSurveyFormatVersion) &&
+        WriteCrcLine(
+            file,
+            crc,
+            "survey_id=%lu\n",
+            static_cast<unsigned long>(
+                survey.surveyId)) &&
+        WriteCrcLine(
+            file,
+            crc,
+            "created_epoch=%lu\n",
+            static_cast<unsigned long>(
+                survey.createdEpoch)) &&
+        WriteCrcLine(
+            file,
+            crc,
+            "name=%s\n",
+            encodedName);
+
+    bool checksumWritten = false;
+
+    if (written)
+    {
+        const uint32_t finalCrc =
+            crc ^ 0xFFFFFFFFUL;
+
+        checksumWritten =
+            file.printf(
+                "checksum_crc32=%08lX\n",
+                static_cast<unsigned long>(
+                    finalCrc)) > 0;
+    }
+
+    file.flush();
+    file.close();
+
+    if (!written ||
+        !checksumWritten)
+    {
+        SD.remove(
+            TemporarySiteSurveyPath);
+        return false;
+    }
+
+    char finalPath[64];
+
+    BuildSiteSurveyPath(
+        survey.surveyId,
+        finalPath,
+        sizeof(finalPath));
+
+    // A survey ID must never overwrite an existing survey.
+    if (SD.exists(finalPath))
+    {
+        SD.remove(
+            TemporarySiteSurveyPath);
+
+        Serial.println(
+            "StorageService: Site Survey save failed - "
+            "destination already exists");
+
+        return false;
+    }
+
+    if (!SD.rename(
+            TemporarySiteSurveyPath,
+            finalPath))
+    {
+        SD.remove(
+            TemporarySiteSurveyPath);
+
+        return false;
+    }
+
+    return true;
+}
+
 StorageService::SessionReadResult
 StorageService::ReadMeasurementSession(
     uint32_t sessionId,
@@ -1386,6 +1690,8 @@ StorageService::ParseMeasurementSession(
     bool confidenceSeen = false;
     bool uniqueSeen = false;
     bool surveyPointSeen = false;
+    bool siteSurveyIdSeen = false;
+    bool siteSurveyNameSeen = false;
 
     bool candidateSeen[
         WiFiMeasurementSummary::CandidateCapacity] = {};
@@ -1557,6 +1863,33 @@ StorageService::ParseMeasurementSession(
             }
 
             surveyPointSeen = true;
+        }
+
+        else if (key == "site_survey_id")
+        {
+            if (siteSurveyIdSeen ||
+                !ParseUnsigned(
+                    value,
+                    session.summary.siteSurveyId))
+            {
+                return SessionReadResult::ParseFailed;
+            }
+
+            siteSurveyIdSeen = true;
+        }
+        else if (key == "site_survey_name")
+        {
+            if (siteSurveyNameSeen ||
+                !DecodeStorageText(
+                    value,
+                    session.summary.siteSurveyName,
+                    WiFiMeasurementSummary::
+                        SiteSurveyNameCapacity))
+            {
+                return SessionReadResult::ParseFailed;
+            }
+
+            siteSurveyNameSeen = true;
         }
 
         else if (key == "completed_at_ms")
@@ -1999,6 +2332,7 @@ StorageService::ParseMeasurementSession(
         version != 2 &&
         version != 3 &&
         version != 4 &&
+        version != 5 &&
         version != CurrentSessionFormatVersion)
     {
         return SessionReadResult::UnsupportedVersion;
@@ -2119,6 +2453,19 @@ StorageService::ParseMeasurementSession(
         session.summary.surveyPoint[0] = '\0';
     }
 
+    if (version >= 6)
+    {
+        complete =
+            complete &&
+            siteSurveyIdSeen &&
+            siteSurveyNameSeen;
+    }
+    else
+    {
+        session.summary.siteSurveyId = 0;
+        session.summary.siteSurveyName[0] = '\0';
+    }
+
     for (uint8_t index = 0;
          index <
              WiFiMeasurementSummary::CandidateCapacity;
@@ -2214,9 +2561,15 @@ bool StorageService::VerifyTemporarySession(
         std::strcmp(
             verified.summary.surveyPoint,
             expected.summary.surveyPoint) != 0 ||
+        verified.summary.siteSurveyId !=
+            expected.summary.siteSurveyId ||
+        std::strcmp(
+            verified.summary.siteSurveyName,
+            expected.summary.siteSurveyName) != 0 ||
         verified.summary.observedNetworkCount !=
             expected.summary.observedNetworkCount ||
         !verified.integrityVerified)
+        
     {
         Serial.println(
             "StorageService: Temporary verification "
@@ -2292,6 +2645,18 @@ bool StorageService::WriteSummaryFields(
         return false;
     }
 
+    char encodedSiteSurveyName[
+        WiFiMeasurementSummary::
+            SiteSurveyNameCapacity * 3] = {};
+
+    if (!EncodeStorageText(
+            summary.siteSurveyName,
+            encodedSiteSurveyName,
+            sizeof(encodedSiteSurveyName)))
+    {
+        return false;
+    }
+
     if (!WriteCrcLine(
             file,
             crc,
@@ -2326,6 +2691,17 @@ bool StorageService::WriteSummaryFields(
             crc,
             "survey_point=%s\n",
             encodedSurveyPoint) ||
+        !WriteCrcLine(
+            file,
+            crc,
+            "site_survey_id=%lu\n",
+            static_cast<unsigned long>(
+                summary.siteSurveyId)) ||
+        !WriteCrcLine(
+            file,
+            crc,
+            "site_survey_name=%s\n",
+            encodedSiteSurveyName) ||
         !WriteCrcLine(
             file,
             crc,
@@ -2601,6 +2977,25 @@ void StorageService::BuildSessionPath(
         "%s/session_%06lu.txt",
         SessionsDirectory,
         static_cast<unsigned long>(sessionId));
+}
+
+void StorageService::BuildSiteSurveyPath(
+    uint32_t surveyId,
+    char *buffer,
+    size_t bufferSize)
+{
+    if (buffer == nullptr ||
+        bufferSize == 0)
+    {
+        return;
+    }
+
+    std::snprintf(
+        buffer,
+        bufferSize,
+        "%s/survey_%06lu.txt",
+        SurveysDirectory,
+        static_cast<unsigned long>(surveyId));
 }
 
 void StorageService::InsertSavedSessionIndex(

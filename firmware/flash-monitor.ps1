@@ -48,7 +48,7 @@ Write-Host "SentinelOS Upload + Monitor"
 Write-Host "==========================="
 Write-Host ""
 
-Write-Host "Looking for ESP32-S3 download port..."
+Write-Host "Looking for ESP32-S3 upload port..."
 
 $uploadPorts = @(Get-EspressifPorts)
 

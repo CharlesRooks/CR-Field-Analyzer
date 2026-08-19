@@ -1,10 +1,14 @@
 #pragma once
+#include <lvgl.h>
+
+#include "MeasurementSetupScreen.h"
 
 #include "../Core/Page.h"
 #include "../Core/Messaging/MessageTypes.h"
 #include "../Services/WiFi/WiFiTypes.h"
 
-#include <lvgl.h>
+
+
 
 enum class WiFiScanView : uint8_t
 {
@@ -42,11 +46,6 @@ private:
     static void HandleHistoryButton(
         lv_event_t *event);
 
-    static void HandleSurveyPointButton(
-        lv_event_t *event);
-
-    static void HandleSurveyPointKeyboard(
-        lv_event_t *event);
 
     lv_obj_t *statusLabel = nullptr;
     lv_obj_t *networkList = nullptr;
@@ -63,9 +62,7 @@ private:
     lv_obj_t *historyButton = nullptr;
     lv_obj_t *historyButtonLabel = nullptr;
 
-    lv_obj_t *surveyPointEditor = nullptr;
-    lv_obj_t *surveyPointTextArea = nullptr;
-    lv_obj_t *surveyPointKeyboard = nullptr;
+    MeasurementSetupScreen measurementSetupScreen;
 
     bool refreshPending = true;
 
@@ -97,13 +94,6 @@ private:
     void UpdateViewButtons();
     void UpdateHistoryControls();
 
-    void AddSurveyPointControl();
-
-    void OpenSurveyPointEditor();
-
-    void CloseSurveyPointEditor(
-        bool save);
-
     void ShowNetworkResults(
         uint8_t networkCount);
 
@@ -117,6 +107,7 @@ private:
         bool capturedTimeValid,
         uint32_t capturedEpoch,
         uint32_t completedAtMs,
+        const char *siteSurveyName,
         const char *surveyPoint);
 
     void AddMessageRow(

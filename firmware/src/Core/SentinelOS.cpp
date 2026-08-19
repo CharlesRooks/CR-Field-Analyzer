@@ -17,6 +17,8 @@
 #include "../Services/Storage/StorageService.h"
 #include "../Services/Time/TimeService.h"
 #include "../Services/USB/UsbStorageService.h"
+#include "../Services/Survey/SiteSurveyService.h"
+#include "../Managers/SiteSurveyManager.h"
 
 
 static LilyGo_Class amoled;
@@ -84,6 +86,7 @@ void SentinelOS::Begin()
     }
 
     TimeService::Begin();
+    SiteSurveyService::Begin();
     StorageService::Begin();
     UsbStorageService::Begin();
 
@@ -100,6 +103,7 @@ void SentinelOS::Begin()
     DisplayService::Begin(&amoled);
 
     WiFiService::Begin();
+    SiteSurveyManager::Begin();
 
     Serial.printf(
         "Wake reason: %s\n",

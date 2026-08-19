@@ -72,6 +72,10 @@ public:
     static bool SetMeasurementSurveyPoint(
         const char *surveyPoint);
 
+    static bool SetMeasurementSiteSurvey(
+        uint32_t surveyId,
+        const char *surveyName);
+
     static const char *GetMeasurementSurveyPoint();
 
     static uint8_t GetNetworkCount();
@@ -122,6 +126,11 @@ private:
 
     static char measurementSurveyPoint[
         WiFiMeasurementSummary::SurveyPointCapacity];
+
+    static uint32_t measurementSiteSurveyId;
+
+    static char measurementSiteSurveyName[
+        WiFiMeasurementSummary::SiteSurveyNameCapacity];
 
     // Unique-BSSID accumulator for the current automatic
     // measurement session. RSSI totals are kept separately so the
