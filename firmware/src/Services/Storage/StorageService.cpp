@@ -38,6 +38,12 @@ namespace
     constexpr uint32_t Crc32Initial =
         0xFFFFFFFFUL;
 
+    constexpr const char *ActiveSiteSurveyPath =
+        "/sentinel/surveys/active.txt";
+
+    constexpr const char *TemporaryActiveSiteSurveyPath =
+        "/sentinel/surveys/active.tmp";
+
     bool TryExtractSessionFileId(
         const char *path,
         const char *requiredExtension,
@@ -1206,6 +1212,418 @@ bool StorageService::CleanupStaleTemporaryFile()
     Serial.println(
         "StorageService: Abandoned session temporary "
         "file removed");
+
+    return true;
+}
+
+bool StorageService::SaveActiveSiteSurvey(
+    uint32_t surveyId,
+    const char *name,
+    uint32_t createdEpoch)
+{
+    if (externalReadOnlyAccessActive)
+    {
+        Serial.println(
+            "StorageService: Active Site Survey save blocked "
+            "while USB Storage Mode is active");
+        return false;
+    }
+
+    if (!available ||
+        surveyId == 0 ||
+        name == nullptr ||
+        name[0] == '\0')
+    {
+        Serial.println(
+            "StorageService: Active Site Survey save skipped - "
+            "invalid survey or storage unavailable");
+        return false;
+    }
+
+    if (!EnsureDirectories())
+    {
+        Serial.println(
+            "StorageService: Active Site Survey save failed - "
+            "storage directories unavailable");
+        return false;
+    }
+
+    char encodedName[
+        StoredActiveSiteSurvey::NameCapacity * 3] = {};
+
+    if (!EncodeStorageText(
+            name,
+            encodedName,
+            sizeof(encodedName)))
+    {
+        Serial.println(
+            "StorageService: Active Site Survey save failed - "
+            "name could not be encoded");
+        return false;
+    }
+
+    if (SD.exists(TemporaryActiveSiteSurveyPath) &&
+        !SD.remove(TemporaryActiveSiteSurveyPath))
+    {
+        Serial.println(
+            "StorageService: Active Site Survey save failed - "
+            "stale temporary file could not be removed");
+        return false;
+    }
+
+    File file =
+        SD.open(
+            TemporaryActiveSiteSurveyPath,
+            FILE_WRITE);
+
+    if (!file)
+    {
+        Serial.println(
+            "StorageService: Active Site Survey save failed - "
+            "temporary file could not be created");
+        return false;
+    }
+
+    uint32_t crc = Crc32Initial;
+
+    const bool written =
+        WriteCrcLine(
+            file,
+            crc,
+            "version=%u\n",
+            CurrentActiveSiteSurveyFormatVersion) &&
+        WriteCrcLine(
+            file,
+            crc,
+            "site_survey_id=%lu\n",
+            static_cast<unsigned long>(surveyId)) &&
+        WriteCrcLine(
+            file,
+            crc,
+            "created_epoch=%lu\n",
+            static_cast<unsigned long>(createdEpoch)) &&
+        WriteCrcLine(
+            file,
+            crc,
+            "name=%s\n",
+            encodedName);
+
+    if (written)
+    {
+        const uint32_t finalCrc =
+            crc ^ 0xFFFFFFFFUL;
+
+        if (file.printf(
+                "checksum_crc32=%08lX\n",
+                static_cast<unsigned long>(
+                    finalCrc)) <= 0)
+        {
+            file.close();
+            SD.remove(
+                TemporaryActiveSiteSurveyPath);
+
+            Serial.println(
+                "StorageService: Active Site Survey save "
+                "failed - checksum could not be written");
+            return false;
+        }
+    }
+
+    file.flush();
+    file.close();
+
+    if (!written)
+    {
+        SD.remove(
+            TemporaryActiveSiteSurveyPath);
+
+        Serial.println(
+            "StorageService: Active Site Survey save failed - "
+            "record was not written completely");
+        return false;
+    }
+
+    if (SD.exists(ActiveSiteSurveyPath) &&
+        !SD.remove(ActiveSiteSurveyPath))
+    {
+        SD.remove(
+            TemporaryActiveSiteSurveyPath);
+
+        Serial.println(
+            "StorageService: Active Site Survey save failed - "
+            "existing active record could not be replaced");
+        return false;
+    }
+
+    if (!SD.rename(
+            TemporaryActiveSiteSurveyPath,
+            ActiveSiteSurveyPath))
+    {
+        SD.remove(
+            TemporaryActiveSiteSurveyPath);
+
+        Serial.println(
+            "StorageService: Active Site Survey save failed - "
+            "temporary record could not be finalized");
+        return false;
+    }
+
+    filesystemUsedBytes =
+        SD.usedBytes();
+
+    Serial.printf(
+        "StorageService: Active Site Survey %lu saved\n",
+        static_cast<unsigned long>(surveyId));
+
+    return true;
+}
+
+bool StorageService::LoadActiveSiteSurvey(
+    StoredActiveSiteSurvey &survey)
+{
+    survey = StoredActiveSiteSurvey{};
+
+    if (!available ||
+        !SD.exists(ActiveSiteSurveyPath))
+    {
+        return false;
+    }
+
+    File file =
+        SD.open(
+            ActiveSiteSurveyPath,
+            FILE_READ);
+
+    if (!file)
+    {
+        Serial.println(
+            "StorageService: Active Site Survey could not "
+            "be opened");
+        return false;
+    }
+
+    uint32_t version = 0;
+    uint32_t surveyId = 0;
+    uint32_t createdEpoch = 0;
+    uint32_t storedChecksum = 0;
+    uint32_t calculatedCrc = Crc32Initial;
+
+    char decodedName[
+        StoredActiveSiteSurvey::NameCapacity] = {};
+
+    bool versionSeen = false;
+    bool surveyIdSeen = false;
+    bool createdEpochSeen = false;
+    bool nameSeen = false;
+    bool checksumSeen = false;
+
+    bool valid = true;
+
+    while (file.available() && valid)
+    {
+        const String rawLine =
+            file.readStringUntil('\n');
+
+        String line = rawLine;
+        line.trim();
+
+        if (line.startsWith(
+                "checksum_crc32="))
+        {
+            if (checksumSeen ||
+                !ParseHexUnsigned(
+                    line.substring(15),
+                    storedChecksum))
+            {
+                valid = false;
+                break;
+            }
+
+            checksumSeen = true;
+            continue;
+        }
+
+        if (checksumSeen)
+        {
+            if (line.length() != 0)
+            {
+                valid = false;
+            }
+
+            continue;
+        }
+
+        calculatedCrc =
+            UpdateCrc32(
+                calculatedCrc,
+                rawLine);
+
+        const uint8_t newline = '\n';
+
+        calculatedCrc =
+            UpdateCrc32(
+                calculatedCrc,
+                &newline,
+                1);
+
+        if (line.length() == 0)
+        {
+            continue;
+        }
+
+        const int separator =
+            line.indexOf('=');
+
+        if (separator <= 0)
+        {
+            valid = false;
+            break;
+        }
+
+        const String key =
+            line.substring(
+                0,
+                separator);
+
+        const String value =
+            line.substring(
+                separator + 1);
+
+        if (key == "version")
+        {
+            if (versionSeen ||
+                !ParseUnsigned(
+                    value,
+                    version))
+            {
+                valid = false;
+            }
+
+            versionSeen = true;
+        }
+        else if (key == "site_survey_id")
+        {
+            if (surveyIdSeen ||
+                !ParseUnsigned(
+                    value,
+                    surveyId))
+            {
+                valid = false;
+            }
+
+            surveyIdSeen = true;
+        }
+        else if (key == "created_epoch")
+        {
+            if (createdEpochSeen ||
+                !ParseUnsigned(
+                    value,
+                    createdEpoch))
+            {
+                valid = false;
+            }
+
+            createdEpochSeen = true;
+        }
+        else if (key == "name")
+        {
+            if (nameSeen ||
+                !DecodeStorageText(
+                    value,
+                    decodedName,
+                    sizeof(decodedName)))
+            {
+                valid = false;
+            }
+
+            nameSeen = true;
+        }
+        else
+        {
+            valid = false;
+        }
+    }
+
+    file.close();
+
+    const uint32_t finalCrc =
+        calculatedCrc ^ 0xFFFFFFFFUL;
+
+    if (!valid ||
+        !versionSeen ||
+        !surveyIdSeen ||
+        !createdEpochSeen ||
+        !nameSeen ||
+        !checksumSeen ||
+        version !=
+            CurrentActiveSiteSurveyFormatVersion ||
+        surveyId == 0 ||
+        decodedName[0] == '\0' ||
+        storedChecksum != finalCrc)
+    {
+        Serial.println(
+            "StorageService: Active Site Survey record "
+            "is invalid");
+        return false;
+    }
+
+    survey.available = true;
+    survey.formatVersion =
+        static_cast<uint8_t>(version);
+    survey.surveyId = surveyId;
+    survey.createdEpoch = createdEpoch;
+
+    std::strncpy(
+        survey.name,
+        decodedName,
+        sizeof(survey.name) - 1);
+
+    survey.name[
+        sizeof(survey.name) - 1] = '\0';
+
+    Serial.printf(
+        "StorageService: Active Site Survey %lu loaded "
+        "(%s)\n",
+        static_cast<unsigned long>(
+            survey.surveyId),
+        survey.name);
+
+    return true;
+}
+
+bool StorageService::ClearActiveSiteSurvey()
+{
+    if (externalReadOnlyAccessActive)
+    {
+        Serial.println(
+            "StorageService: Active Site Survey clear blocked "
+            "while USB Storage Mode is active");
+        return false;
+    }
+
+    if (!available)
+    {
+        return false;
+    }
+
+    if (!SD.exists(ActiveSiteSurveyPath))
+    {
+        return true;
+    }
+
+    if (!SD.remove(ActiveSiteSurveyPath))
+    {
+        Serial.println(
+            "StorageService: Active Site Survey record "
+            "could not be removed");
+        return false;
+    }
+
+    filesystemUsedBytes =
+        SD.usedBytes();
+
+    Serial.println(
+        "StorageService: Active Site Survey cleared");
 
     return true;
 }

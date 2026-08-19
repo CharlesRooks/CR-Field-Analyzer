@@ -104,6 +104,29 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 * Completed sessions retain their assigned Survey Point after the working label is cleared.
 * After a completed measurement, the Scan screen correctly returns to `Point: Set survey location` for the next survey point.
 
+
+### Milestone 10.22B — Site Survey Lifecycle & Reboot Recovery
+
+#### Added
+- Added persistent active Site Survey context using `/sentinel/surveys/active.txt`.
+- Added CRC-protected active survey storage.
+- Added active Site Survey restoration during SentinelOS startup.
+- Added explicit `Close Survey` control to Measurement Setup.
+- Added active survey cleanup when a Site Survey is closed.
+- Added rollback handling to preserve the previous survey context if a survey switch fails.
+
+#### Changed
+- Active Site Surveys now survive device resets and power cycles.
+- Survey Point remains intentionally transient and is not restored after reboot.
+- Measurement Setup only displays `Close Survey` when a Site Survey is currently active.
+
+#### Verified
+- Active Site Survey restored successfully after physical reset.
+- Survey Point remained blank after reboot.
+- Close Survey removed the active survey context.
+- Closed Site Survey did not return after reboot.
+- Measurement Setup correctly reflected active and inactive survey states.
+
 ### Milestone 10.22A — Site Survey Measurement Setup
 
 #### Added

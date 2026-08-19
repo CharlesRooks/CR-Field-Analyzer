@@ -31,6 +31,7 @@ private:
     lv_obj_t *siteSurveyTextArea = nullptr;
     lv_obj_t *surveyPointTextArea = nullptr;
 
+    lv_obj_t *closeSurveyButton = nullptr;
     lv_obj_t *cancelButton = nullptr;
     lv_obj_t *startButton = nullptr;
 
@@ -44,6 +45,9 @@ private:
     lv_event_t *event);
 
     static void HandleKeyboardEvent(
+        lv_event_t *event);
+
+    static void HandleCloseSurveyButton(
         lv_event_t *event);
 
     static void HandleCancelButton(

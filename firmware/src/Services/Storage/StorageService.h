@@ -76,6 +76,16 @@ public:
     static const StoredWiFiMeasurementSession *
         GetSavedSession(uint8_t index);
 
+    static bool SaveActiveSiteSurvey(
+        uint32_t surveyId,
+        const char *name,
+        uint32_t createdEpoch);
+
+    static bool LoadActiveSiteSurvey(
+        StoredActiveSiteSurvey &survey);
+
+    static bool ClearActiveSiteSurvey();
+
 private:
     static constexpr uint8_t CurrentSessionFormatVersion = 6;
     static constexpr uint8_t EnumeratedSessionCapacity = 128;
@@ -180,4 +190,7 @@ private:
         uint32_t surveyId,
         char *buffer,
         size_t bufferSize);
+
+    static constexpr uint8_t
+        CurrentActiveSiteSurveyFormatVersion = 1;
 };

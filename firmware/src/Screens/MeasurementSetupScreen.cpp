@@ -192,6 +192,40 @@ void MeasurementSetupScreen::Show(
         buttonRow,
         LV_OBJ_FLAG_SCROLLABLE);
 
+    if (SiteSurveyService::HasActiveSurvey())
+    {
+        closeSurveyButton =
+            lv_btn_create(buttonRow);
+
+        lv_obj_set_width(
+            closeSurveyButton,
+            0);
+
+        lv_obj_set_height(
+            closeSurveyButton,
+            36);
+
+        lv_obj_set_flex_grow(
+            closeSurveyButton,
+            1);
+
+        lv_obj_t *closeSurveyLabel =
+            lv_label_create(closeSurveyButton);
+
+        lv_label_set_text(
+            closeSurveyLabel,
+            "Close Survey");
+
+        lv_obj_center(
+            closeSurveyLabel);
+
+        lv_obj_add_event_cb(
+            closeSurveyButton,
+            MeasurementSetupScreen::HandleCloseSurveyButton,
+            LV_EVENT_CLICKED,
+            nullptr);
+    }
+    
     cancelButton =
         lv_btn_create(buttonRow);
 
@@ -256,6 +290,38 @@ void MeasurementSetupScreen::Show(
 
     lv_obj_move_foreground(
         root);
+}
+
+void MeasurementSetupScreen::HandleCloseSurveyButton(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr ||
+        lv_event_get_code(event) !=
+            LV_EVENT_CLICKED)
+    {
+        return;
+    }
+
+    if (!SiteSurveyService::HasActiveSurvey())
+    {
+        return;
+    }
+
+    if (!SiteSurveyManager::CloseSurvey())
+    {
+        Serial.println(
+            "MeasurementSetupScreen: "
+            "Site Survey could not be closed");
+
+        return;
+    }
+
+    Serial.println(
+        "MeasurementSetupScreen: "
+        "Site Survey closed");
+
+    instance->Hide();
 }
 
 void MeasurementSetupScreen::HandleCancelButton(
@@ -594,6 +660,7 @@ void MeasurementSetupScreen::Hide()
     root = nullptr;
     siteSurveyTextArea = nullptr;
     surveyPointTextArea = nullptr;
+    closeSurveyButton = nullptr;
     cancelButton = nullptr;
     startButton = nullptr;
     instance = nullptr;

@@ -8,10 +8,56 @@
 
 void SiteSurveyManager::Begin()
 {
-    // SentinelOS starts with no active Site Survey.
+    // Start from a known clear Wi-Fi measurement context.
     WiFiService::SetMeasurementSiteSurvey(
         0,
         nullptr);
+
+    StoredActiveSiteSurvey storedSurvey{};
+
+    if (!StorageService::LoadActiveSiteSurvey(
+            storedSurvey))
+    {
+        Serial.println(
+            "SiteSurveyManager: No active Site Survey "
+            "to restore");
+        return;
+    }
+
+    if (!SiteSurveyService::StartSurvey(
+            storedSurvey.surveyId,
+            storedSurvey.name,
+            storedSurvey.createdEpoch))
+    {
+        Serial.printf(
+            "SiteSurveyManager: Stored active survey %lu "
+            "could not be restored\n",
+            static_cast<unsigned long>(
+                storedSurvey.surveyId));
+
+        return;
+    }
+
+    if (!WiFiService::SetMeasurementSiteSurvey(
+            storedSurvey.surveyId,
+            storedSurvey.name))
+    {
+        SiteSurveyService::CloseSurvey();
+
+        Serial.printf(
+            "SiteSurveyManager: Restored survey %lu "
+            "could not be synchronized with Wi-Fi\n",
+            static_cast<unsigned long>(
+                storedSurvey.surveyId));
+
+        return;
+    }
+
+    Serial.printf(
+        "SiteSurveyManager: Restored active survey %lu: %s\n",
+        static_cast<unsigned long>(
+            storedSurvey.surveyId),
+        storedSurvey.name);
 }
 
 bool SiteSurveyManager::StartSurvey(
@@ -81,6 +127,26 @@ bool SiteSurveyManager::StartSurvey(
         return false;
     }
 
+    if (!StorageService::SaveActiveSiteSurvey(
+            survey.surveyId,
+            survey.name,
+            survey.createdEpoch))
+    {
+        WiFiService::SetMeasurementSiteSurvey(
+            0,
+            nullptr);
+
+        SiteSurveyService::CloseSurvey();
+
+        Serial.printf(
+            "SiteSurveyManager: Survey %lu could not be "
+            "persisted as the active survey\n",
+            static_cast<unsigned long>(
+                survey.surveyId));
+
+        return false;
+    }
+
     Serial.printf(
         "SiteSurveyManager: Survey %lu active: %s\n",
         static_cast<unsigned long>(
@@ -139,20 +205,48 @@ bool SiteSurveyManager::PrepareSurvey(
     // If the new survey could not be created, restore the
     // previous active survey so the operator does not lose
     // the current survey context because of a storage failure.
-    const bool restored =
+    const bool serviceRestored =
         SiteSurveyService::StartSurvey(
             current.surveyId,
             current.name,
-            current.createdEpoch) &&
-        WiFiService::SetMeasurementSiteSurvey(
-            current.surveyId,
-            current.name);
+            current.createdEpoch);
 
-    if (!restored)
+    bool wifiRestored = false;
+    bool storageRestored = false;
+
+    if (serviceRestored)
+    {
+        wifiRestored =
+            WiFiService::SetMeasurementSiteSurvey(
+                current.surveyId,
+                current.name);
+    }
+
+    if (serviceRestored &&
+        wifiRestored)
+    {
+        storageRestored =
+            StorageService::SaveActiveSiteSurvey(
+                current.surveyId,
+                current.name,
+                current.createdEpoch);
+    }
+
+    if (!serviceRestored ||
+        !wifiRestored ||
+        !storageRestored)
     {
         Serial.println(
             "SiteSurveyManager: Previous survey "
-            "could not be restored");
+            "could not be fully restored");
+    }
+    else
+    {
+        Serial.printf(
+            "SiteSurveyManager: Previous survey %lu "
+            "restored after failed survey switch\n",
+            static_cast<unsigned long>(
+                current.surveyId));
     }
 
     return false;
@@ -160,6 +254,17 @@ bool SiteSurveyManager::PrepareSurvey(
 
 bool SiteSurveyManager::CloseSurvey()
 {
+    SiteSurveyInfo current{};
+
+    const bool hadActiveSurvey =
+        SiteSurveyService::HasActiveSurvey();
+
+    if (hadActiveSurvey)
+    {
+        current =
+            SiteSurveyService::GetActiveSurvey();
+    }
+
     // Clear the Wi-Fi assignment first. If a measurement is active,
     // WiFiService will reject the change and the survey remains open.
     if (!WiFiService::SetMeasurementSiteSurvey(
@@ -169,7 +274,36 @@ bool SiteSurveyManager::CloseSurvey()
         return false;
     }
 
+    // The persistent active-survey marker must also be removed.
+    // Otherwise the survey would incorrectly return after reboot.
+    if (!StorageService::ClearActiveSiteSurvey())
+    {
+        // Restore the Wi-Fi assignment if persistence could not
+        // be cleared so RAM and storage remain consistent.
+        if (hadActiveSurvey)
+        {
+            WiFiService::SetMeasurementSiteSurvey(
+                current.surveyId,
+                current.name);
+        }
+
+        Serial.println(
+            "SiteSurveyManager: Active survey could not "
+            "be closed because persistence could not "
+            "be cleared");
+
+        return false;
+    }
+
     SiteSurveyService::CloseSurvey();
+
+    if (hadActiveSurvey)
+    {
+        Serial.printf(
+            "SiteSurveyManager: Survey %lu closed\n",
+            static_cast<unsigned long>(
+                current.surveyId));
+    }
 
     return true;
 }
