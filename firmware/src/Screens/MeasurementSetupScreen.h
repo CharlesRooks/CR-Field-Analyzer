@@ -31,9 +31,15 @@ private:
     lv_obj_t *siteSurveyTextArea = nullptr;
     lv_obj_t *surveyPointTextArea = nullptr;
 
+    lv_obj_t *selectSavedSurveyButton = nullptr;
     lv_obj_t *closeSurveyButton = nullptr;
     lv_obj_t *cancelButton = nullptr;
     lv_obj_t *startButton = nullptr;
+
+    lv_obj_t *surveySelectorRoot = nullptr;
+
+    uint32_t selectedSavedSurveyId = 0;
+    uint32_t selectedSavedSurveyCreatedEpoch = 0;
 
     lv_obj_t *editorRoot = nullptr;
     lv_obj_t *editorTextArea = nullptr;
@@ -47,6 +53,15 @@ private:
     static void HandleKeyboardEvent(
         lv_event_t *event);
 
+    static void HandleSelectSavedSurveyButton(
+        lv_event_t *event);
+
+    static void HandleSavedSurveyButton(
+        lv_event_t *event);
+
+    static void HandleSurveySelectorCancel(
+        lv_event_t *event);
+
     static void HandleCloseSurveyButton(
         lv_event_t *event);
 
@@ -55,6 +70,10 @@ private:
 
     static void HandleStartButton(
         lv_event_t *event);
+
+    void OpenSurveySelector();
+
+    void CloseSurveySelector();
 
     void OpenTextEditor(
         lv_obj_t *target);

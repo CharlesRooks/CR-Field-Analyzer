@@ -159,6 +159,37 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 - Site Survey and Survey Point displayed correctly in both Networks and Channels History views.
 - Fast firmware upload using `flash.ps1`.
 
+
+### Milestone 10.22C — Site Survey Catalog & Resume Existing Survey
+
+#### Added
+- Added lightweight in-memory Site Survey catalog.
+- Added startup enumeration and CRC32 validation of persisted Site Survey records.
+- Added newest-first indexing of saved Site Surveys.
+- Added automatic catalog synchronization when new Site Surveys are created.
+- Added `ResumeSurvey()` support for reopening an existing Site Survey without creating a duplicate survey record.
+- Added safe saved-survey switching with rollback to the previous active survey if resume fails.
+- Added Saved Site Survey selector to Measurement Setup.
+
+#### Changed
+- Existing Site Surveys can now be deliberately reopened using their original Survey ID and creation timestamp.
+- Manual Site Survey name entry continues to use the new-survey workflow.
+- Manual editing after selecting a saved survey clears the stored selection identity to prevent accidental ID/name mismatches.
+- Measurement Setup layout was compacted to accommodate the Saved Survey selector.
+- Saved Survey selector uses a vertically scrollable list while keeping its controls accessible.
+- Button heights were rebalanced for improved symmetry and use of the available display area.
+
+#### Verified
+- Saved Site Survey catalog populated successfully on hardware.
+- Existing Site Survey could be selected and resumed.
+- Resumed survey retained its original Survey ID.
+- Resuming an existing survey did not create a duplicate permanent survey record.
+- Resumed Site Survey survived physical reboot as the active survey.
+- Survey Point remained transient.
+- Saved Survey selector scrolling operated correctly.
+- Measurement Setup and action controls fit fully on the display.
+
+
 ## [0.5.0-alpha] - 2026-07-11
 
 ### Added

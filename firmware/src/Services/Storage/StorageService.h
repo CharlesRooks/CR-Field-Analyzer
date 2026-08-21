@@ -55,6 +55,13 @@ public:
 
     static uint32_t GetNextSiteSurveyId();
 
+    static constexpr uint8_t MaxSavedSiteSurveys = 64;
+
+    static uint8_t GetSavedSiteSurveyCount();
+
+    static const StoredSiteSurveyIndex *
+        GetSavedSiteSurveyIndex(uint8_t index);
+
     static bool SaveMeasurementSummary(
         const WiFiMeasurementSummary &summary,
         uint32_t completedAtMs,
@@ -121,6 +128,11 @@ private:
     static uint8_t savedSessionCount;
     static uint32_t nextSessionId;
     static uint32_t nextSiteSurveyId;
+    static StoredSiteSurveyIndex
+        savedSiteSurveyIndex[
+            MaxSavedSiteSurveys];
+
+    static uint8_t savedSiteSurveyCount;
     static void LoadSiteSurveySequence();
 
     static bool EnsureDirectories();
@@ -185,6 +197,10 @@ private:
 
     static bool WriteSiteSurveyRecord(
         const StoredSiteSurvey &survey);
+
+    static bool ReadSiteSurveyRecord(
+        uint32_t surveyId,
+        StoredSiteSurvey &survey);
 
     static void BuildSiteSurveyPath(
         uint32_t surveyId,

@@ -644,6 +644,12 @@ uint8_t StorageService::savedSessionCount = 0;
 uint32_t StorageService::nextSessionId = 1;
 uint32_t StorageService::nextSiteSurveyId = 1;
 
+StoredSiteSurveyIndex
+    StorageService::savedSiteSurveyIndex[
+        StorageService::MaxSavedSiteSurveys] = {};
+
+uint8_t StorageService::savedSiteSurveyCount = 0;
+
 void StorageService::Begin()
 {
     available = false;
@@ -656,6 +662,7 @@ void StorageService::Begin()
     savedSessionCount = 0;
     nextSessionId = 1;
     nextSiteSurveyId = 1;
+    savedSiteSurveyCount = 0;
     loadedSession = emptyStoredSession;
     loadedSessionIndex = InvalidLoadedSessionIndex;
 
@@ -665,6 +672,14 @@ void StorageService::Begin()
     {
         savedSessionIndex[index] =
             StoredWiFiMeasurementSessionIndex{};
+    }
+    
+    for (uint8_t index = 0;
+        index < MaxSavedSiteSurveys;
+        ++index)
+    {
+        savedSiteSurveyIndex[index] =
+            StoredSiteSurveyIndex{};
     }
 
     Serial.println(
@@ -1052,6 +1067,49 @@ bool StorageService::CreateSiteSurveyRecord(
 
     surveyId = survey.surveyId;
 
+    StoredSiteSurveyIndex indexEntry{};
+
+    indexEntry.available = true;
+    indexEntry.surveyId =
+        survey.surveyId;
+    indexEntry.createdEpoch =
+        survey.createdEpoch;
+
+    std::strncpy(
+        indexEntry.name,
+        survey.name,
+        sizeof(indexEntry.name) - 1);
+
+    indexEntry.name[
+        sizeof(indexEntry.name) - 1] = '\0';
+
+    // Newly created surveys always have the highest
+    // monotonic Survey ID, so they belong at the
+    // beginning of the newest-first catalog.
+    const uint8_t moveEnd =
+        savedSiteSurveyCount <
+                MaxSavedSiteSurveys
+            ? savedSiteSurveyCount
+            : MaxSavedSiteSurveys - 1;
+
+    for (uint8_t index = moveEnd;
+        index > 0;
+        --index)
+    {
+        savedSiteSurveyIndex[index] =
+            savedSiteSurveyIndex[
+                index - 1];
+    }
+
+    savedSiteSurveyIndex[0] =
+        indexEntry;
+
+    if (savedSiteSurveyCount <
+        MaxSavedSiteSurveys)
+    {
+        ++savedSiteSurveyCount;
+    }
+
     ++nextSiteSurveyId;
 
     if (nextSiteSurveyId == 0)
@@ -1078,6 +1136,23 @@ uint8_t StorageService::GetSavedSessionCount()
 uint32_t StorageService::GetNextSiteSurveyId()
 {
     return nextSiteSurveyId;
+}
+
+uint8_t StorageService::GetSavedSiteSurveyCount()
+{
+    return savedSiteSurveyCount;
+}
+
+const StoredSiteSurveyIndex *
+StorageService::GetSavedSiteSurveyIndex(
+    uint8_t index)
+{
+    if (index >= savedSiteSurveyCount)
+    {
+        return nullptr;
+    }
+
+    return &savedSiteSurveyIndex[index];
 }
 
 const StoredWiFiMeasurementSessionIndex *
@@ -1757,6 +1832,16 @@ void StorageService::LoadMeasurementSessions()
 
 void StorageService::LoadSiteSurveySequence()
 {
+    savedSiteSurveyCount = 0;
+
+    for (uint8_t index = 0;
+         index < MaxSavedSiteSurveys;
+         ++index)
+    {
+        savedSiteSurveyIndex[index] =
+            StoredSiteSurveyIndex{};
+    }
+
     uint32_t maximumSurveyId = 0;
 
     File directory =
@@ -1775,6 +1860,8 @@ void StorageService::LoadSiteSurveySequence()
 
     while (entry)
     {
+        uint32_t candidateSurveyId = 0;
+
         if (!entry.isDirectory())
         {
             const char *path =
@@ -1814,17 +1901,104 @@ void StorageService::LoadSiteSurveySequence()
                     parsed != 0 &&
                     std::strcmp(
                         numberEnd,
-                        ".txt") == 0 &&
-                    parsed > maximumSurveyId)
+                        ".txt") == 0)
                 {
-                    maximumSurveyId =
+                    candidateSurveyId =
                         static_cast<uint32_t>(
                             parsed);
+
+                    if (candidateSurveyId >
+                        maximumSurveyId)
+                    {
+                        maximumSurveyId =
+                            candidateSurveyId;
+                    }
                 }
             }
         }
 
         entry.close();
+
+        if (candidateSurveyId != 0)
+        {
+            StoredSiteSurvey survey{};
+
+            if (ReadSiteSurveyRecord(
+                    candidateSurveyId,
+                    survey))
+            {
+                uint8_t insertIndex = 0;
+
+                while (
+                    insertIndex <
+                        savedSiteSurveyCount &&
+                    savedSiteSurveyIndex[
+                        insertIndex]
+                            .surveyId >
+                        survey.surveyId)
+                {
+                    ++insertIndex;
+                }
+
+                if (insertIndex <
+                    MaxSavedSiteSurveys)
+                {
+                    const uint8_t moveEnd =
+                        savedSiteSurveyCount <
+                                MaxSavedSiteSurveys
+                            ? savedSiteSurveyCount
+                            : MaxSavedSiteSurveys - 1;
+
+                    for (uint8_t moveIndex =
+                             moveEnd;
+                         moveIndex > insertIndex;
+                         --moveIndex)
+                    {
+                        savedSiteSurveyIndex[
+                            moveIndex] =
+                            savedSiteSurveyIndex[
+                                moveIndex - 1];
+                    }
+
+                    StoredSiteSurveyIndex
+                        indexEntry{};
+
+                    indexEntry.available = true;
+                    indexEntry.surveyId =
+                        survey.surveyId;
+                    indexEntry.createdEpoch =
+                        survey.createdEpoch;
+
+                    std::strncpy(
+                        indexEntry.name,
+                        survey.name,
+                        sizeof(indexEntry.name) - 1);
+
+                    indexEntry.name[
+                        sizeof(indexEntry.name) - 1] =
+                        '\0';
+
+                    savedSiteSurveyIndex[
+                        insertIndex] =
+                        indexEntry;
+
+                    if (savedSiteSurveyCount <
+                        MaxSavedSiteSurveys)
+                    {
+                        ++savedSiteSurveyCount;
+                    }
+                }
+            }
+            else
+            {
+                Serial.printf(
+                    "StorageService: Site Survey %lu "
+                    "skipped - record invalid\n",
+                    static_cast<unsigned long>(
+                        candidateSurveyId));
+            }
+        }
+
         entry =
             directory.openNextFile();
     }
@@ -1840,7 +2014,12 @@ void StorageService::LoadSiteSurveySequence()
     }
 
     Serial.printf(
-        "StorageService: Next Site Survey ID %lu\n",
+        "StorageService: Indexed %u saved Site Survey%s; "
+        "next ID %lu\n",
+        savedSiteSurveyCount,
+        savedSiteSurveyCount == 1
+            ? ""
+            : "s",
         static_cast<unsigned long>(
             nextSiteSurveyId));
 }
@@ -2035,6 +2214,220 @@ bool StorageService::WriteSiteSurveyRecord(
 
         return false;
     }
+
+    return true;
+}
+
+bool StorageService::ReadSiteSurveyRecord(
+    uint32_t surveyId,
+    StoredSiteSurvey &survey)
+{
+    survey = StoredSiteSurvey{};
+
+    if (!available ||
+        surveyId == 0)
+    {
+        return false;
+    }
+
+    char path[64];
+
+    BuildSiteSurveyPath(
+        surveyId,
+        path,
+        sizeof(path));
+
+    File file =
+        SD.open(
+            path,
+            FILE_READ);
+
+    if (!file)
+    {
+        return false;
+    }
+
+    uint32_t version = 0;
+    uint32_t storedSurveyId = 0;
+    uint32_t createdEpoch = 0;
+    uint32_t storedChecksum = 0;
+    uint32_t calculatedCrc =
+        Crc32Initial;
+
+    char decodedName[
+        StoredSiteSurvey::NameCapacity] = {};
+
+    bool versionSeen = false;
+    bool surveyIdSeen = false;
+    bool createdEpochSeen = false;
+    bool nameSeen = false;
+    bool checksumSeen = false;
+
+    bool valid = true;
+
+    while (file.available() &&
+           valid)
+    {
+        const String rawLine =
+            file.readStringUntil('\n');
+
+        String line = rawLine;
+        line.trim();
+
+        if (line.startsWith(
+                "checksum_crc32="))
+        {
+            if (checksumSeen ||
+                !ParseHexUnsigned(
+                    line.substring(15),
+                    storedChecksum))
+            {
+                valid = false;
+                break;
+            }
+
+            checksumSeen = true;
+            continue;
+        }
+
+        // Nothing except blank lines is allowed after
+        // the checksum field.
+        if (checksumSeen)
+        {
+            if (line.length() != 0)
+            {
+                valid = false;
+            }
+
+            continue;
+        }
+
+        calculatedCrc =
+            UpdateCrc32(
+                calculatedCrc,
+                rawLine);
+
+        const uint8_t newline = '\n';
+
+        calculatedCrc =
+            UpdateCrc32(
+                calculatedCrc,
+                &newline,
+                1);
+
+        if (line.length() == 0)
+        {
+            continue;
+        }
+
+        const int separator =
+            line.indexOf('=');
+
+        if (separator <= 0)
+        {
+            valid = false;
+            break;
+        }
+
+        const String key =
+            line.substring(
+                0,
+                separator);
+
+        const String value =
+            line.substring(
+                separator + 1);
+
+        if (key == "version")
+        {
+            if (versionSeen ||
+                !ParseUnsigned(
+                    value,
+                    version))
+            {
+                valid = false;
+            }
+
+            versionSeen = true;
+        }
+        else if (key == "survey_id")
+        {
+            if (surveyIdSeen ||
+                !ParseUnsigned(
+                    value,
+                    storedSurveyId))
+            {
+                valid = false;
+            }
+
+            surveyIdSeen = true;
+        }
+        else if (key == "created_epoch")
+        {
+            if (createdEpochSeen ||
+                !ParseUnsigned(
+                    value,
+                    createdEpoch))
+            {
+                valid = false;
+            }
+
+            createdEpochSeen = true;
+        }
+        else if (key == "name")
+        {
+            if (nameSeen ||
+                !DecodeStorageText(
+                    value,
+                    decodedName,
+                    sizeof(decodedName)))
+            {
+                valid = false;
+            }
+
+            nameSeen = true;
+        }
+        else
+        {
+            valid = false;
+        }
+    }
+
+    file.close();
+
+    const uint32_t finalCrc =
+        calculatedCrc ^ 0xFFFFFFFFUL;
+
+    if (!valid ||
+        !versionSeen ||
+        !surveyIdSeen ||
+        !createdEpochSeen ||
+        !nameSeen ||
+        !checksumSeen ||
+        version !=
+            CurrentSiteSurveyFormatVersion ||
+        storedSurveyId != surveyId ||
+        decodedName[0] == '\0' ||
+        storedChecksum != finalCrc)
+    {
+        return false;
+    }
+
+    survey.available = true;
+    survey.formatVersion =
+        static_cast<uint8_t>(version);
+    survey.surveyId =
+        storedSurveyId;
+    survey.createdEpoch =
+        createdEpoch;
+
+    std::strncpy(
+        survey.name,
+        decodedName,
+        sizeof(survey.name) - 1);
+
+    survey.name[
+        sizeof(survey.name) - 1] = '\0';
 
     return true;
 }

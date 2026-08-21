@@ -81,6 +81,17 @@ struct StoredSiteSurvey
     char name[NameCapacity] = {};
 };
 
+struct StoredSiteSurveyIndex
+{
+    bool available = false;
+
+    uint32_t surveyId = 0;
+    uint32_t createdEpoch = 0;
+
+    char name[
+        StoredSiteSurvey::NameCapacity] = {};
+};
+
 struct StoredActiveSiteSurvey
 {
     static constexpr uint8_t NameCapacity = 48;

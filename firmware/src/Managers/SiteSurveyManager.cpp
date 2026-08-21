@@ -156,6 +156,182 @@ bool SiteSurveyManager::StartSurvey(
     return true;
 }
 
+bool SiteSurveyManager::ResumeSurvey(
+    uint32_t surveyId,
+    const char *name,
+    uint32_t createdEpoch)
+{
+    if (surveyId == 0 ||
+        name == nullptr ||
+        name[0] == '\0')
+    {
+        return false;
+    }
+
+    // Resuming is only valid when no Site Survey
+    // is currently active.
+    if (SiteSurveyService::HasActiveSurvey())
+    {
+        return false;
+    }
+
+    // Do not change survey context while a Wi-Fi
+    // measurement is already in progress.
+    if (WiFiService::GetState() ==
+            WiFiScanState::Scanning ||
+        WiFiService::
+            IsAutomaticMeasurementSessionActive())
+    {
+        return false;
+    }
+
+    // Unlike StartSurvey(), no permanent survey
+    // record is created here. The supplied ID
+    // already belongs to an existing survey.
+    if (!SiteSurveyService::StartSurvey(
+            surveyId,
+            name,
+            createdEpoch))
+    {
+        return false;
+    }
+
+    const SiteSurveyInfo &survey =
+        SiteSurveyService::GetActiveSurvey();
+
+    if (!WiFiService::SetMeasurementSiteSurvey(
+            survey.surveyId,
+            survey.name))
+    {
+        SiteSurveyService::CloseSurvey();
+
+        Serial.printf(
+            "SiteSurveyManager: Survey %lu could not "
+            "be resumed in Wi-Fi context\n",
+            static_cast<unsigned long>(
+                surveyId));
+
+        return false;
+    }
+
+    if (!StorageService::SaveActiveSiteSurvey(
+            survey.surveyId,
+            survey.name,
+            survey.createdEpoch))
+    {
+        WiFiService::SetMeasurementSiteSurvey(
+            0,
+            nullptr);
+
+        SiteSurveyService::CloseSurvey();
+
+        Serial.printf(
+            "SiteSurveyManager: Survey %lu could not "
+            "be persisted as the active survey\n",
+            static_cast<unsigned long>(
+                surveyId));
+
+        return false;
+    }
+
+    Serial.printf(
+        "SiteSurveyManager: Survey %lu resumed: %s\n",
+        static_cast<unsigned long>(
+            survey.surveyId),
+        survey.name);
+
+    return true;
+}
+
+bool SiteSurveyManager::PrepareSavedSurvey(
+    uint32_t surveyId,
+    const char *name,
+    uint32_t createdEpoch)
+{
+    if (surveyId == 0 ||
+        name == nullptr ||
+        name[0] == '\0')
+    {
+        return false;
+    }
+
+    // Nothing is currently active, so the stored
+    // survey can be resumed directly.
+    if (!SiteSurveyService::HasActiveSurvey())
+    {
+        return ResumeSurvey(
+            surveyId,
+            name,
+            createdEpoch);
+    }
+
+    const SiteSurveyInfo current =
+        SiteSurveyService::GetActiveSurvey();
+
+    // Selecting the survey that is already active
+    // simply continues the existing context.
+    if (current.surveyId == surveyId)
+    {
+        if (std::strcmp(
+                current.name,
+                name) != 0)
+        {
+            Serial.printf(
+                "SiteSurveyManager: Survey %lu name "
+                "does not match active survey\n",
+                static_cast<unsigned long>(
+                    surveyId));
+
+            return false;
+        }
+
+        return WiFiService::
+            SetMeasurementSiteSurvey(
+                current.surveyId,
+                current.name);
+    }
+
+    // Switching to a different stored survey requires
+    // closing the current active context first.
+    if (!CloseSurvey())
+    {
+        return false;
+    }
+
+    if (ResumeSurvey(
+            surveyId,
+            name,
+            createdEpoch))
+    {
+        return true;
+    }
+
+    // The selected survey could not be resumed.
+    // Restore the previous active survey so a failed
+    // switch does not unnecessarily lose its context.
+    if (!ResumeSurvey(
+            current.surveyId,
+            current.name,
+            current.createdEpoch))
+    {
+        Serial.printf(
+            "SiteSurveyManager: Previous survey %lu "
+            "could not be restored after failed resume\n",
+            static_cast<unsigned long>(
+                current.surveyId));
+    }
+    else
+    {
+        Serial.printf(
+            "SiteSurveyManager: Previous survey %lu "
+            "restored after failed resume\n",
+            static_cast<unsigned long>(
+                current.surveyId));
+    }
+
+    return false;
+}
+
 bool SiteSurveyManager::PrepareSurvey(
     const char *name,
     uint32_t createdEpoch)
