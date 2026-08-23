@@ -190,6 +190,42 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 - Measurement Setup and action controls fit fully on the display.
 
 
+### Milestone 10.23B — Persistent Survey Point Registry & Reuse Workflow
+
+#### Added
+- Added persistent Survey Point records with globally unique Point IDs.
+- Added parent Site Survey references to persisted Survey Points.
+- Added CRC32-protected Survey Point storage under `/sentinel/survey_points/`.
+- Added in-memory Survey Point catalog with startup recovery.
+- Added monotonic Survey Point ID allocation with protection against ID reuse.
+- Added validation of Survey Point parent Site Survey records.
+- Added persistent Survey Point selection and reuse from Measurement Setup.
+- Added manager coordination for creating new and preparing saved Survey Points.
+- Added Survey Point ID support to the Wi-Fi measurement working context.
+- Added Measurement Session format v7 with persistent `survey_point_id`.
+
+#### Changed
+- Survey Points are now persistent entities rather than free-text measurement labels only.
+- Measurement records retain both Survey Point ID and human-readable Survey Point name.
+- Saved Survey Points can only be reused within the Site Survey that owns them.
+- Manual Point entry creates a new persistent Survey Point.
+- Selecting a saved Point reuses its original Point ID.
+- Working Survey Point identity is cleared after each completed measurement while the Site Survey remains active.
+- Measurement session parser remains backward compatible with formats v1 through v6.
+
+#### Verified
+- New Survey Point created and persisted successfully on hardware.
+- Saved Survey Point appeared correctly in the Point selector.
+- Existing Survey Point could be reused for additional measurements.
+- Reusing a saved Point did not create a duplicate Point entry.
+- Multiple Survey Points could be created under the same Site Survey.
+- Survey Point catalog survived physical reset.
+- Active Site Survey restored successfully after reboot.
+- Survey Point remained intentionally blank after reboot.
+- Existing saved Survey Points remained selectable after reboot.
+- New format v7 measurement sessions loaded successfully from History.
+- Legacy v1-v6 measurement sessions continued to load successfully.
+
 ## [0.5.0-alpha] - 2026-07-11
 
 ### Added

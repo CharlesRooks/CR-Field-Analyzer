@@ -25,5 +25,14 @@ public:
         const char *name,
         uint32_t createdEpoch);
 
+    static bool PrepareNewSurveyPoint(
+        const char *name,
+        uint32_t createdEpoch);
+
+    static bool PrepareSavedSurveyPoint(
+        uint32_t pointId,
+        uint32_t siteSurveyId,
+        const char *name);
+
     static bool CloseSurvey();
 };

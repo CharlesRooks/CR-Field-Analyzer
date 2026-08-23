@@ -32,14 +32,19 @@ private:
     lv_obj_t *surveyPointTextArea = nullptr;
 
     lv_obj_t *selectSavedSurveyButton = nullptr;
+    lv_obj_t *selectSavedPointButton = nullptr;
     lv_obj_t *closeSurveyButton = nullptr;
     lv_obj_t *cancelButton = nullptr;
     lv_obj_t *startButton = nullptr;
 
     lv_obj_t *surveySelectorRoot = nullptr;
+    lv_obj_t *pointSelectorRoot = nullptr;
 
     uint32_t selectedSavedSurveyId = 0;
     uint32_t selectedSavedSurveyCreatedEpoch = 0;
+
+    uint32_t selectedSavedPointId = 0;
+    uint32_t selectedSavedPointSiteSurveyId = 0;
 
     lv_obj_t *editorRoot = nullptr;
     lv_obj_t *editorTextArea = nullptr;
@@ -62,6 +67,15 @@ private:
     static void HandleSurveySelectorCancel(
         lv_event_t *event);
 
+    static void HandleSelectSavedPointButton(
+        lv_event_t *event);
+
+    static void HandleSavedPointButton(
+        lv_event_t *event);
+
+    static void HandlePointSelectorCancel(
+        lv_event_t *event);
+
     static void HandleCloseSurveyButton(
         lv_event_t *event);
 
@@ -74,6 +88,17 @@ private:
     void OpenSurveySelector();
 
     void CloseSurveySelector();
+
+    void OpenPointSelector();
+
+    void ClosePointSelector();
+
+    uint32_t GetPointContextSurveyId() const;
+
+    void RefreshSavedPointButtonState();
+
+    void ClearSavedPointSelection(
+        bool clearText);
 
     void OpenTextEditor(
         lv_obj_t *target);

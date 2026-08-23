@@ -177,6 +177,11 @@ struct WiFiMeasurementSummary
 
     char siteSurveyName[SiteSurveyNameCapacity] = {};
 
+    // Stable reference to the Survey Point represented by
+    // this measurement. Zero means the measurement is not
+    // assigned to a persistent Survey Point.
+    uint32_t surveyPointId = 0;
+
     static constexpr uint8_t SurveyPointCapacity = 32;
 
     char surveyPoint[SurveyPointCapacity] = {};

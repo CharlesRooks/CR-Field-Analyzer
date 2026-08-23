@@ -72,11 +72,16 @@ public:
     static bool SetMeasurementSurveyPoint(
         const char *surveyPoint);
 
+    static bool SetMeasurementSurveyPoint(
+        uint32_t pointId,
+        const char *surveyPoint);
+
     static bool SetMeasurementSiteSurvey(
         uint32_t surveyId,
         const char *surveyName);
 
     static const char *GetMeasurementSurveyPoint();
+    static uint32_t GetMeasurementSurveyPointId();
 
     static uint8_t GetNetworkCount();
 
@@ -123,6 +128,8 @@ private:
 
     static WiFiMeasurementSummary
         measurementSummary;
+
+    static uint32_t measurementSurveyPointId;
 
     static char measurementSurveyPoint[
         WiFiMeasurementSummary::SurveyPointCapacity];

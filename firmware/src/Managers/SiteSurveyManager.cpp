@@ -428,6 +428,170 @@ bool SiteSurveyManager::PrepareSurvey(
     return false;
 }
 
+bool SiteSurveyManager::PrepareNewSurveyPoint(
+    const char *name,
+    uint32_t createdEpoch)
+{
+    if (name == nullptr ||
+        name[0] == '\0')
+    {
+        return false;
+    }
+
+    if (!SiteSurveyService::HasActiveSurvey())
+    {
+        Serial.println(
+            "SiteSurveyManager: Survey Point creation "
+            "requires an active Site Survey");
+
+        return false;
+    }
+
+    if (WiFiService::GetState() ==
+            WiFiScanState::Scanning ||
+        WiFiService::
+            IsAutomaticMeasurementSessionActive())
+    {
+        return false;
+    }
+
+    const SiteSurveyInfo &survey =
+        SiteSurveyService::GetActiveSurvey();
+
+    uint32_t pointId = 0;
+
+    if (!StorageService::
+            CreateSiteSurveyPointRecord(
+                survey.surveyId,
+                name,
+                createdEpoch,
+                pointId))
+    {
+        Serial.println(
+            "SiteSurveyManager: Survey Point "
+            "could not be created");
+
+        return false;
+    }
+
+    if (!WiFiService::
+            SetMeasurementSurveyPoint(
+                pointId,
+                name))
+    {
+        Serial.printf(
+            "SiteSurveyManager: Survey Point %lu "
+            "was stored but could not be assigned "
+            "to the measurement\n",
+            static_cast<unsigned long>(pointId));
+
+        return false;
+    }
+
+    Serial.printf(
+        "SiteSurveyManager: Survey Point %lu "
+        "prepared for Site Survey %lu: %s\n",
+        static_cast<unsigned long>(pointId),
+        static_cast<unsigned long>(survey.surveyId),
+        name);
+
+    return true;
+}
+
+bool SiteSurveyManager::PrepareSavedSurveyPoint(
+    uint32_t pointId,
+    uint32_t siteSurveyId,
+    const char *name)
+{
+    if (pointId == 0 ||
+        siteSurveyId == 0 ||
+        name == nullptr ||
+        name[0] == '\0')
+    {
+        return false;
+    }
+
+    if (!SiteSurveyService::HasActiveSurvey())
+    {
+        return false;
+    }
+
+    if (WiFiService::GetState() ==
+            WiFiScanState::Scanning ||
+        WiFiService::
+            IsAutomaticMeasurementSessionActive())
+    {
+        return false;
+    }
+
+    const SiteSurveyInfo &survey =
+        SiteSurveyService::GetActiveSurvey();
+
+    if (survey.surveyId != siteSurveyId)
+    {
+        Serial.printf(
+            "SiteSurveyManager: Survey Point %lu "
+            "belongs to Site Survey %lu, not active "
+            "Site Survey %lu\n",
+            static_cast<unsigned long>(pointId),
+            static_cast<unsigned long>(siteSurveyId),
+            static_cast<unsigned long>(survey.surveyId));
+
+        return false;
+    }
+
+    const uint8_t pointCount =
+        StorageService::GetSavedSiteSurveyPointCount();
+
+    const StoredSiteSurveyPointIndex *matchedPoint = nullptr;
+
+    for (uint8_t index = 0;
+         index < pointCount;
+         ++index)
+    {
+        const StoredSiteSurveyPointIndex *point =
+            StorageService::GetSavedSiteSurveyPointIndex(index);
+
+        if (point != nullptr &&
+            point->available &&
+            point->pointId == pointId)
+        {
+            matchedPoint = point;
+            break;
+        }
+    }
+
+    if (matchedPoint == nullptr ||
+        matchedPoint->siteSurveyId != siteSurveyId ||
+        std::strcmp(
+            matchedPoint->name,
+            name) != 0)
+    {
+        Serial.printf(
+            "SiteSurveyManager: Saved Survey Point %lu "
+            "identity could not be validated\n",
+            static_cast<unsigned long>(pointId));
+
+        return false;
+    }
+
+    if (!WiFiService::SetMeasurementSurveyPoint(
+            matchedPoint->pointId,
+            matchedPoint->name))
+    {
+        return false;
+    }
+
+    Serial.printf(
+        "SiteSurveyManager: Saved Survey Point %lu "
+        "prepared for Site Survey %lu: %s\n",
+        static_cast<unsigned long>(matchedPoint->pointId),
+        static_cast<unsigned long>(matchedPoint->siteSurveyId),
+        matchedPoint->name);
+
+    return true;
+}
+
 bool SiteSurveyManager::CloseSurvey()
 {
     SiteSurveyInfo current{};

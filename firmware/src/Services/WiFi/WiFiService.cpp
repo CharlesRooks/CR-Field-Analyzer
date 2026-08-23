@@ -40,6 +40,8 @@ WiFiChannelRecommendation
 WiFiMeasurementSummary
     WiFiService::measurementSummary{};
 
+uint32_t WiFiService::measurementSurveyPointId = 0;
+
 char WiFiService::measurementSurveyPoint[
     WiFiMeasurementSummary::SurveyPointCapacity] = {};
 
@@ -697,6 +699,9 @@ void WiFiService::CaptureMeasurementSummary()
         WiFiMeasurementSummary::
             SiteSurveyNameCapacity - 1] = '\0';
 
+    measurementSummary.surveyPointId =
+        measurementSurveyPointId;
+
     std::strncpy(
         measurementSummary.surveyPoint,
         measurementSurveyPoint,
@@ -778,9 +783,10 @@ void WiFiService::CaptureMeasurementSummary()
             measurementSummary.recommendation
                 .confidence));
 
-    // The completed summary owns its Survey Point label from this
-    // point onward. Clear the working label so the next physical
-    // survey location must be identified deliberately.
+    // The completed summary owns its Survey Point identity from
+    // this point onward. Clear the working Point so the next
+    // physical survey location must be identified deliberately.
+    measurementSurveyPointId = 0;
     measurementSurveyPoint[0] = '\0';
 }
 
@@ -1287,12 +1293,30 @@ bool WiFiService::HasReachedDeadline(
 bool WiFiService::SetMeasurementSurveyPoint(
     const char *surveyPoint)
 {
+    return SetMeasurementSurveyPoint(
+        0,
+        surveyPoint);
+}
+
+bool WiFiService::SetMeasurementSurveyPoint(
+    uint32_t pointId,
+    const char *surveyPoint)
+{
     if (surveyPoint == nullptr ||
         state == WiFiScanState::Scanning ||
         IsAutomaticMeasurementSessionActive())
     {
         return false;
     }
+
+    if (pointId != 0 &&
+        (surveyPoint[0] == '\0' ||
+         measurementSiteSurveyId == 0))
+    {
+        return false;
+    }
+
+    measurementSurveyPointId = pointId;
 
     std::strncpy(
         measurementSurveyPoint,
@@ -1321,6 +1345,8 @@ bool WiFiService::SetMeasurementSiteSurvey(
     {
         measurementSiteSurveyId = 0;
         measurementSiteSurveyName[0] = '\0';
+        measurementSurveyPointId = 0;
+        measurementSurveyPoint[0] = '\0';
         return true;
     }
 
@@ -1328,6 +1354,12 @@ bool WiFiService::SetMeasurementSiteSurvey(
         surveyName[0] == '\0')
     {
         return false;
+    }
+
+    if (measurementSiteSurveyId != surveyId)
+    {
+        measurementSurveyPointId = 0;
+        measurementSurveyPoint[0] = '\0';
     }
 
     measurementSiteSurveyId = surveyId;
@@ -1348,6 +1380,11 @@ bool WiFiService::SetMeasurementSiteSurvey(
 const char *WiFiService::GetMeasurementSurveyPoint()
 {
     return measurementSurveyPoint;
+}
+
+uint32_t WiFiService::GetMeasurementSurveyPointId()
+{
+    return measurementSurveyPointId;
 }
 
 uint16_t WiFiService::CalculateAverageScore(

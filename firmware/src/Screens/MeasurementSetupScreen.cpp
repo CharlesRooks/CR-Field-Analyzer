@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <cstring>
 
 #include "MeasurementSetupScreen.h"
 
@@ -24,6 +25,8 @@ void MeasurementSetupScreen::Show(
 
     selectedSavedSurveyId = 0;
     selectedSavedSurveyCreatedEpoch = 0;
+    selectedSavedPointId = 0;
+    selectedSavedPointSiteSurveyId = 0;
 
     lv_obj_t *parent =
         lv_layer_top();
@@ -168,8 +171,35 @@ void MeasurementSetupScreen::Show(
         pointLabel,
         "Survey Point");
 
+    lv_obj_t *pointRow =
+        lv_obj_create(root);
+
+    lv_obj_remove_style_all(
+        pointRow);
+
+    lv_obj_set_width(
+        pointRow,
+        lv_pct(100));
+
+    lv_obj_set_height(
+        pointRow,
+        34);
+
+    lv_obj_set_flex_flow(
+        pointRow,
+        LV_FLEX_FLOW_ROW);
+
+    lv_obj_set_style_pad_column(
+        pointRow,
+        6,
+        0);
+
+    lv_obj_clear_flag(
+        pointRow,
+        LV_OBJ_FLAG_SCROLLABLE);
+
     surveyPointTextArea =
-        lv_textarea_create(root);
+        lv_textarea_create(pointRow);
 
     lv_obj_add_event_cb(
         surveyPointTextArea,
@@ -179,11 +209,15 @@ void MeasurementSetupScreen::Show(
 
     lv_obj_set_width(
         surveyPointTextArea,
-        lv_pct(100));
+        0);
 
     lv_obj_set_height(
         surveyPointTextArea,
         34);
+
+    lv_obj_set_flex_grow(
+        surveyPointTextArea,
+        1);
 
     lv_textarea_set_one_line(
         surveyPointTextArea,
@@ -191,11 +225,42 @@ void MeasurementSetupScreen::Show(
 
     lv_textarea_set_max_length(
         surveyPointTextArea,
-        31);
+        WiFiMeasurementSummary::SurveyPointCapacity - 1);
 
     lv_textarea_set_placeholder_text(
         surveyPointTextArea,
         "e.g. Conference Room");
+
+    selectSavedPointButton =
+        lv_btn_create(pointRow);
+
+    lv_obj_set_width(
+        selectSavedPointButton,
+        112);
+
+    lv_obj_set_height(
+        selectSavedPointButton,
+        34);
+
+    lv_obj_t *selectSavedPointLabel =
+        lv_label_create(
+            selectSavedPointButton);
+
+    lv_label_set_text(
+        selectSavedPointLabel,
+        "Saved Point");
+
+    lv_obj_center(
+        selectSavedPointLabel);
+
+    lv_obj_add_event_cb(
+        selectSavedPointButton,
+        MeasurementSetupScreen::
+            HandleSelectSavedPointButton,
+        LV_EVENT_CLICKED,
+        nullptr);
+
+    RefreshSavedPointButtonState();
 
     // ------------------------------------------------------------
     // Buttons
@@ -385,11 +450,15 @@ HandleSavedSurveyButton(
             survey->name);
     }
 
+    instance->ClearSavedPointSelection(true);
+
     instance->selectedSavedSurveyId =
         survey->surveyId;
 
     instance->selectedSavedSurveyCreatedEpoch =
         survey->createdEpoch;
+
+    instance->RefreshSavedPointButtonState();
 
     Serial.printf(
         "MeasurementSetupScreen: Saved Site Survey "
@@ -414,6 +483,96 @@ HandleSurveySelectorCancel(
     }
 
     instance->CloseSurveySelector();
+}
+
+void MeasurementSetupScreen::
+HandleSelectSavedPointButton(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr ||
+        lv_event_get_code(event) != LV_EVENT_CLICKED)
+    {
+        return;
+    }
+
+    instance->OpenPointSelector();
+}
+
+void MeasurementSetupScreen::
+HandleSavedPointButton(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr ||
+        lv_event_get_code(event) != LV_EVENT_CLICKED)
+    {
+        return;
+    }
+
+    const uintptr_t rawIndex =
+        reinterpret_cast<uintptr_t>(
+            lv_event_get_user_data(event));
+
+    if (rawIndex > 0xFF)
+    {
+        return;
+    }
+
+    const uint8_t index =
+        static_cast<uint8_t>(rawIndex);
+
+    const StoredSiteSurveyPointIndex *point =
+        StorageService::GetSavedSiteSurveyPointIndex(index);
+
+    if (point == nullptr ||
+        !point->available)
+    {
+        return;
+    }
+
+    const uint32_t surveyId =
+        instance->GetPointContextSurveyId();
+
+    if (surveyId == 0 ||
+        point->siteSurveyId != surveyId)
+    {
+        return;
+    }
+
+    if (instance->surveyPointTextArea != nullptr)
+    {
+        lv_textarea_set_text(
+            instance->surveyPointTextArea,
+            point->name);
+    }
+
+    instance->selectedSavedPointId = point->pointId;
+    instance->selectedSavedPointSiteSurveyId =
+        point->siteSurveyId;
+
+    Serial.printf(
+        "MeasurementSetupScreen: Saved Survey Point "
+        "%lu selected for Site Survey %lu: %s\n",
+        static_cast<unsigned long>(point->pointId),
+        static_cast<unsigned long>(point->siteSurveyId),
+        point->name);
+
+    instance->ClosePointSelector();
+}
+
+void MeasurementSetupScreen::
+HandlePointSelectorCancel(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr ||
+        lv_event_get_code(event) != LV_EVENT_CLICKED)
+    {
+        return;
+    }
+
+    instance->ClosePointSelector();
 }
 
 void MeasurementSetupScreen::HandleCloseSurveyButton(
@@ -542,12 +701,34 @@ void MeasurementSetupScreen::HandleStartButton(
         return;
     }
 
-    if (!WiFiService::SetMeasurementSurveyPoint(
-            surveyPoint))
+    bool pointPrepared = false;
+
+    if (instance->selectedSavedPointId != 0)
+    {
+        pointPrepared =
+            SiteSurveyManager::PrepareSavedSurveyPoint(
+                instance->selectedSavedPointId,
+                instance->selectedSavedPointSiteSurveyId,
+                surveyPoint);
+    }
+    else
+    {
+        uint32_t pointCreatedEpoch = 0;
+
+        TimeService::GetEpochTime(
+            pointCreatedEpoch);
+
+        pointPrepared =
+            SiteSurveyManager::PrepareNewSurveyPoint(
+                surveyPoint,
+                pointCreatedEpoch);
+    }
+
+    if (!pointPrepared)
     {
         Serial.println(
             "MeasurementSetupScreen: "
-            "Survey Point could not be assigned");
+            "Survey Point preparation failed");
 
         return;
     }
@@ -596,13 +777,22 @@ void MeasurementSetupScreen::HandleTextAreaFocus(
         instance->siteSurveyTextArea)
     {
         // Manual editing means this is no longer an
-        // explicit selection of a stored survey.
+        // explicit selection of a stored survey. Any
+        // selected Point identity is also parent-specific.
         instance->selectedSavedSurveyId = 0;
         instance->selectedSavedSurveyCreatedEpoch = 0;
+        instance->ClearSavedPointSelection(false);
+        instance->RefreshSavedPointButtonState();
+    }
+    else if (target ==
+             instance->surveyPointTextArea)
+    {
+        // Editing a saved Point turns the value into a
+        // deliberate new Point on Start.
+        instance->ClearSavedPointSelection(false);
     }
 
-    instance->OpenTextEditor(
-        target);
+    instance->OpenTextEditor(target);
 }
 
 void MeasurementSetupScreen::OpenSurveySelector()
@@ -825,6 +1015,275 @@ void MeasurementSetupScreen::CloseSurveySelector()
     surveySelectorRoot = nullptr;
 }
 
+uint32_t MeasurementSetupScreen::GetPointContextSurveyId() const
+{
+    if (selectedSavedSurveyId != 0)
+    {
+        return selectedSavedSurveyId;
+    }
+
+    if (!SiteSurveyService::HasActiveSurvey() ||
+        siteSurveyTextArea == nullptr)
+    {
+        return 0;
+    }
+
+    const SiteSurveyInfo &activeSurvey =
+        SiteSurveyService::GetActiveSurvey();
+
+    const char *displayedName =
+        lv_textarea_get_text(siteSurveyTextArea);
+
+    if (displayedName == nullptr ||
+        std::strcmp(
+            displayedName,
+            activeSurvey.name) != 0)
+    {
+        return 0;
+    }
+
+    return activeSurvey.surveyId;
+}
+
+void MeasurementSetupScreen::RefreshSavedPointButtonState()
+{
+    if (selectSavedPointButton == nullptr)
+    {
+        return;
+    }
+
+    const uint32_t surveyId = GetPointContextSurveyId();
+    bool hasSavedPoint = false;
+
+    if (surveyId != 0)
+    {
+        const uint8_t count =
+            StorageService::GetSavedSiteSurveyPointCount();
+
+        for (uint8_t index = 0;
+             index < count;
+             ++index)
+        {
+            const StoredSiteSurveyPointIndex *point =
+                StorageService::GetSavedSiteSurveyPointIndex(index);
+
+            if (point != nullptr &&
+                point->available &&
+                point->siteSurveyId == surveyId)
+            {
+                hasSavedPoint = true;
+                break;
+            }
+        }
+    }
+
+    if (hasSavedPoint)
+    {
+        lv_obj_clear_state(
+            selectSavedPointButton,
+            LV_STATE_DISABLED);
+    }
+    else
+    {
+        lv_obj_add_state(
+            selectSavedPointButton,
+            LV_STATE_DISABLED);
+    }
+}
+
+void MeasurementSetupScreen::ClearSavedPointSelection(
+    bool clearText)
+{
+    selectedSavedPointId = 0;
+    selectedSavedPointSiteSurveyId = 0;
+
+    if (clearText &&
+        surveyPointTextArea != nullptr)
+    {
+        lv_textarea_set_text(
+            surveyPointTextArea,
+            "");
+    }
+}
+
+void MeasurementSetupScreen::OpenPointSelector()
+{
+    if (pointSelectorRoot != nullptr)
+    {
+        return;
+    }
+
+    const uint32_t surveyId =
+        GetPointContextSurveyId();
+
+    if (surveyId == 0)
+    {
+        return;
+    }
+
+    const uint8_t pointCount =
+        StorageService::GetSavedSiteSurveyPointCount();
+
+    bool hasMatchingPoint = false;
+
+    for (uint8_t index = 0;
+         index < pointCount;
+         ++index)
+    {
+        const StoredSiteSurveyPointIndex *point =
+            StorageService::GetSavedSiteSurveyPointIndex(index);
+
+        if (point != nullptr &&
+            point->available &&
+            point->siteSurveyId == surveyId)
+        {
+            hasMatchingPoint = true;
+            break;
+        }
+    }
+
+    if (!hasMatchingPoint)
+    {
+        return;
+    }
+
+    lv_obj_t *parent = lv_layer_top();
+
+    if (parent == nullptr)
+    {
+        return;
+    }
+
+    pointSelectorRoot = lv_obj_create(parent);
+
+    lv_obj_set_pos(pointSelectorRoot, 0, 0);
+    lv_obj_set_size(
+        pointSelectorRoot,
+        lv_pct(100),
+        lv_pct(100));
+
+    lv_obj_set_style_pad_all(
+        pointSelectorRoot,
+        8,
+        0);
+
+    lv_obj_set_style_pad_row(
+        pointSelectorRoot,
+        6,
+        0);
+
+    lv_obj_set_flex_flow(
+        pointSelectorRoot,
+        LV_FLEX_FLOW_COLUMN);
+
+    lv_obj_clear_flag(
+        pointSelectorRoot,
+        LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *title =
+        lv_label_create(pointSelectorRoot);
+
+    lv_label_set_text(
+        title,
+        "SAVED SURVEY POINTS");
+
+    lv_obj_t *pointList =
+        lv_obj_create(pointSelectorRoot);
+
+    lv_obj_set_width(pointList, lv_pct(100));
+    lv_obj_set_height(pointList, 0);
+    lv_obj_set_flex_grow(pointList, 1);
+    lv_obj_add_flag(pointList, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(pointList, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(
+        pointList,
+        LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_style_pad_all(pointList, 4, 0);
+    lv_obj_set_style_pad_row(pointList, 4, 0);
+    lv_obj_set_flex_flow(
+        pointList,
+        LV_FLEX_FLOW_COLUMN);
+
+    for (uint8_t index = 0;
+         index < pointCount;
+         ++index)
+    {
+        const StoredSiteSurveyPointIndex *point =
+            StorageService::GetSavedSiteSurveyPointIndex(index);
+
+        if (point == nullptr ||
+            !point->available ||
+            point->siteSurveyId != surveyId)
+        {
+            continue;
+        }
+
+        lv_obj_t *button = lv_btn_create(pointList);
+
+        lv_obj_set_width(button, lv_pct(100));
+        lv_obj_set_height(button, 40);
+
+        lv_obj_add_event_cb(
+            button,
+            MeasurementSetupScreen::HandleSavedPointButton,
+            LV_EVENT_CLICKED,
+            reinterpret_cast<void *>(
+                static_cast<uintptr_t>(index)));
+
+        lv_obj_t *label = lv_label_create(button);
+
+        lv_obj_set_width(label, lv_pct(100));
+        lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
+
+        char text[72];
+
+        std::snprintf(
+            text,
+            sizeof(text),
+            "#%lu  %s",
+            static_cast<unsigned long>(point->pointId),
+            point->name);
+
+        lv_label_set_text(label, text);
+        lv_obj_center(label);
+    }
+
+    lv_obj_t *cancelButton =
+        lv_btn_create(pointSelectorRoot);
+
+    lv_obj_set_width(cancelButton, lv_pct(100));
+    lv_obj_set_height(cancelButton, 34);
+
+    lv_obj_t *cancelLabel =
+        lv_label_create(cancelButton);
+
+    lv_label_set_text(cancelLabel, "Cancel");
+    lv_obj_center(cancelLabel);
+
+    lv_obj_add_event_cb(
+        cancelButton,
+        MeasurementSetupScreen::HandlePointSelectorCancel,
+        LV_EVENT_CLICKED,
+        nullptr);
+
+    lv_obj_move_foreground(pointSelectorRoot);
+}
+
+void MeasurementSetupScreen::ClosePointSelector()
+{
+    if (pointSelectorRoot == nullptr)
+    {
+        return;
+    }
+
+    lv_obj_add_flag(
+        pointSelectorRoot,
+        LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_del_async(pointSelectorRoot);
+    pointSelectorRoot = nullptr;
+}
+
 void MeasurementSetupScreen::OpenTextEditor(
     lv_obj_t *target)
 {
@@ -967,6 +1426,9 @@ void MeasurementSetupScreen::CloseTextEditor(
         return;
     }
 
+    const bool editedSiteSurvey =
+        editorTarget == siteSurveyTextArea;
+
     if (save &&
         editorTarget != nullptr &&
         editorTextArea != nullptr)
@@ -980,6 +1442,11 @@ void MeasurementSetupScreen::CloseTextEditor(
             text != nullptr
                 ? text
                 : "");
+    }
+
+    if (editedSiteSurvey)
+    {
+        RefreshSavedPointButtonState();
     }
 
     lv_obj_add_flag(
@@ -1034,10 +1501,19 @@ void MeasurementSetupScreen::Hide()
         surveySelectorRoot = nullptr;
     }
 
+    if (pointSelectorRoot != nullptr)
+    {
+        lv_obj_del_async(
+            pointSelectorRoot);
+
+        pointSelectorRoot = nullptr;
+    }
+
     lv_obj_del_async(root);
 
     root = nullptr;
     selectSavedSurveyButton = nullptr;
+    selectSavedPointButton = nullptr;
     siteSurveyTextArea = nullptr;
     surveyPointTextArea = nullptr;
     closeSurveyButton = nullptr;
@@ -1045,6 +1521,8 @@ void MeasurementSetupScreen::Hide()
     startButton = nullptr;
     selectedSavedSurveyId = 0;
     selectedSavedSurveyCreatedEpoch = 0;
+    selectedSavedPointId = 0;
+    selectedSavedPointSiteSurveyId = 0;
     instance = nullptr;
 
     editorRoot = nullptr;

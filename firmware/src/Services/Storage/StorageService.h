@@ -62,6 +62,25 @@ public:
     static const StoredSiteSurveyIndex *
         GetSavedSiteSurveyIndex(uint8_t index);
 
+    static constexpr uint8_t
+        MaxSavedSiteSurveyPoints = 128;
+
+    static uint8_t
+        GetSavedSiteSurveyPointCount();
+
+    static const StoredSiteSurveyPointIndex *
+        GetSavedSiteSurveyPointIndex(
+            uint8_t index);
+
+    static uint32_t
+        GetNextSiteSurveyPointId();
+
+    static bool CreateSiteSurveyPointRecord(
+        uint32_t siteSurveyId,
+        const char *name,
+        uint32_t createdEpoch,
+        uint32_t &pointId);
+
     static bool SaveMeasurementSummary(
         const WiFiMeasurementSummary &summary,
         uint32_t completedAtMs,
@@ -94,7 +113,7 @@ public:
     static bool ClearActiveSiteSurvey();
 
 private:
-    static constexpr uint8_t CurrentSessionFormatVersion = 6;
+    static constexpr uint8_t CurrentSessionFormatVersion = 7;
     static constexpr uint8_t EnumeratedSessionCapacity = 128;
     static constexpr uint8_t InvalidLoadedSessionIndex = 0xFF;
     
@@ -133,7 +152,17 @@ private:
             MaxSavedSiteSurveys];
 
     static uint8_t savedSiteSurveyCount;
+
+    static uint32_t nextSiteSurveyPointId;
+
+    static StoredSiteSurveyPointIndex
+        savedSiteSurveyPointIndex[
+            MaxSavedSiteSurveyPoints];
+
+    static uint8_t savedSiteSurveyPointCount;
+
     static void LoadSiteSurveySequence();
+    static void LoadSiteSurveyPointSequence();
 
     static bool EnsureDirectories();
     static bool CleanupStaleTemporaryFile();
@@ -204,6 +233,21 @@ private:
 
     static void BuildSiteSurveyPath(
         uint32_t surveyId,
+        char *buffer,
+        size_t bufferSize);
+
+    static constexpr uint8_t
+        CurrentSiteSurveyPointFormatVersion = 1;
+
+    static bool WriteSiteSurveyPointRecord(
+        const StoredSiteSurveyPoint &point);
+
+    static bool ReadSiteSurveyPointRecord(
+        uint32_t pointId,
+        StoredSiteSurveyPoint &point);
+
+    static void BuildSiteSurveyPointPath(
+        uint32_t pointId,
         char *buffer,
         size_t bufferSize);
 

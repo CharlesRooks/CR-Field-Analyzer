@@ -13,7 +13,8 @@ struct StoredWiFiMeasurementSession
     // version 3 adds a wall-clock capture timestamp; version 4
     // adds the per-BSSID network inventory; version 5 adds the
     // optional site-survey point label; version 6 adds the
-    // parent Site Survey reference.
+    // parent Site Survey reference; version 7 adds the stable
+    // Survey Point reference.
     uint8_t formatVersion = 0;
 
     // True only when the stored record carried a checksum and
@@ -90,6 +91,33 @@ struct StoredSiteSurveyIndex
 
     char name[
         StoredSiteSurvey::NameCapacity] = {};
+};
+
+struct StoredSiteSurveyPoint
+{
+    static constexpr uint8_t NameCapacity =
+        WiFiMeasurementSummary::SurveyPointCapacity;
+
+    bool available = false;
+    uint8_t formatVersion = 0;
+
+    uint32_t pointId = 0;
+    uint32_t siteSurveyId = 0;
+    uint32_t createdEpoch = 0;
+
+    char name[NameCapacity] = {};
+};
+
+struct StoredSiteSurveyPointIndex
+{
+    bool available = false;
+
+    uint32_t pointId = 0;
+    uint32_t siteSurveyId = 0;
+    uint32_t createdEpoch = 0;
+
+    char name[
+        StoredSiteSurveyPoint::NameCapacity] = {};
 };
 
 struct StoredActiveSiteSurvey
