@@ -93,6 +93,44 @@ struct StoredSiteSurveyIndex
         StoredSiteSurvey::NameCapacity] = {};
 };
 
+struct StoredFloorPlan
+{
+    static constexpr uint8_t NameCapacity = 32;
+    static constexpr uint8_t ImagePathCapacity = 96;
+
+    bool available = false;
+    uint8_t formatVersion = 0;
+
+    uint32_t floorPlanId = 0;
+    uint32_t siteSurveyId = 0;
+    uint32_t createdEpoch = 0;
+
+    // Original raster dimensions are retained as metadata.
+    // Zero means the dimensions were not known when the record
+    // was registered. Survey Point coordinates will be stored
+    // independently as normalized values in a later milestone.
+    uint16_t sourceWidth = 0;
+    uint16_t sourceHeight = 0;
+
+    char name[NameCapacity] = {};
+    char imagePath[ImagePathCapacity] = {};
+};
+
+struct StoredFloorPlanIndex
+{
+    bool available = false;
+
+    uint32_t floorPlanId = 0;
+    uint32_t siteSurveyId = 0;
+    uint32_t createdEpoch = 0;
+
+    uint16_t sourceWidth = 0;
+    uint16_t sourceHeight = 0;
+
+    char name[StoredFloorPlan::NameCapacity] = {};
+    char imagePath[StoredFloorPlan::ImagePathCapacity] = {};
+};
+
 struct StoredSiteSurveyPoint
 {
     static constexpr uint8_t NameCapacity =

@@ -104,6 +104,91 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 * Completed sessions retain their assigned Survey Point after the working label is cleared.
 * After a completed measurement, the Scan screen correctly returns to `Point: Set survey location` for the next survey point.
 
+### Milestone 10.24A — Floor Plan Persistent Storage Foundation
+
+#### Added
+- Added persistent Floor Plan data model.
+- Added globally unique Floor Plan IDs.
+- Added parent Site Survey references for Floor Plans.
+- Added CRC32-protected Floor Plan metadata records.
+- Added persistent Floor Plan catalog and startup recovery.
+- Added `/sentinel/floorplans/` storage directory.
+- Added `/sentinel/floorplans/images/` image storage directory.
+- Added validation that Floor Plans belong to valid Site Surveys.
+- Added monotonic Floor Plan ID allocation with protection against ID reuse.
+
+#### Verified
+- Firmware compiled successfully.
+- Device booted successfully on hardware.
+- Floor Plan storage directories were created automatically.
+- Existing Site Survey records remained intact.
+- Existing Survey Point records remained intact.
+- USB Mass Storage continued to operate normally.
+
+### Milestone 10.23B — Persistent Survey Point Registry & Reuse Workflow
+
+#### Added
+- Added persistent Survey Point records with globally unique Point IDs.
+- Added parent Site Survey references to persisted Survey Points.
+- Added CRC32-protected Survey Point storage under `/sentinel/survey_points/`.
+- Added in-memory Survey Point catalog with startup recovery.
+- Added monotonic Survey Point ID allocation with protection against ID reuse.
+- Added validation of Survey Point parent Site Survey records.
+- Added persistent Survey Point selection and reuse from Measurement Setup.
+- Added manager coordination for creating new and preparing saved Survey Points.
+- Added Survey Point ID support to the Wi-Fi measurement working context.
+- Added Measurement Session format v7 with persistent `survey_point_id`.
+
+#### Changed
+- Survey Points are now persistent entities rather than free-text measurement labels only.
+- Measurement records retain both Survey Point ID and human-readable Survey Point name.
+- Saved Survey Points can only be reused within the Site Survey that owns them.
+- Manual Point entry creates a new persistent Survey Point.
+- Selecting a saved Point reuses its original Point ID.
+- Working Survey Point identity is cleared after each completed measurement while the Site Survey remains active.
+- Measurement session parser remains backward compatible with formats v1 through v6.
+
+#### Verified
+- New Survey Point created and persisted successfully on hardware.
+- Saved Survey Point appeared correctly in the Point selector.
+- Existing Survey Point could be reused for additional measurements.
+- Reusing a saved Point did not create a duplicate Point entry.
+- Multiple Survey Points could be created under the same Site Survey.
+- Survey Point catalog survived physical reset.
+- Active Site Survey restored successfully after reboot.
+- Survey Point remained intentionally blank after reboot.
+- Existing saved Survey Points remained selectable after reboot.
+- New format v7 measurement sessions loaded successfully from History.
+- Legacy v1-v6 measurement sessions continued to load successfully.
+
+### Milestone 10.22C — Site Survey Catalog & Resume Existing Survey
+
+#### Added
+- Added lightweight in-memory Site Survey catalog.
+- Added startup enumeration and CRC32 validation of persisted Site Survey records.
+- Added newest-first indexing of saved Site Surveys.
+- Added automatic catalog synchronization when new Site Surveys are created.
+- Added `ResumeSurvey()` support for reopening an existing Site Survey without creating a duplicate survey record.
+- Added safe saved-survey switching with rollback to the previous active survey if resume fails.
+- Added Saved Site Survey selector to Measurement Setup.
+
+#### Changed
+- Existing Site Surveys can now be deliberately reopened using their original Survey ID and creation timestamp.
+- Manual Site Survey name entry continues to use the new-survey workflow.
+- Manual editing after selecting a saved survey clears the stored selection identity to prevent accidental ID/name mismatches.
+- Measurement Setup layout was compacted to accommodate the Saved Survey selector.
+- Saved Survey selector uses a vertically scrollable list while keeping its controls accessible.
+- Button heights were rebalanced for improved symmetry and use of the available display area.
+
+#### Verified
+- Saved Site Survey catalog populated successfully on hardware.
+- Existing Site Survey could be selected and resumed.
+- Resumed survey retained its original Survey ID.
+- Resuming an existing survey did not create a duplicate permanent survey record.
+- Resumed Site Survey survived physical reboot as the active survey.
+- Survey Point remained transient.
+- Saved Survey selector scrolling operated correctly.
+- Measurement Setup and action controls fit fully on the display.
 
 ### Milestone 10.22B — Site Survey Lifecycle & Reboot Recovery
 
@@ -158,73 +243,6 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 - Survey Point cleared for each new measurement.
 - Site Survey and Survey Point displayed correctly in both Networks and Channels History views.
 - Fast firmware upload using `flash.ps1`.
-
-
-### Milestone 10.22C — Site Survey Catalog & Resume Existing Survey
-
-#### Added
-- Added lightweight in-memory Site Survey catalog.
-- Added startup enumeration and CRC32 validation of persisted Site Survey records.
-- Added newest-first indexing of saved Site Surveys.
-- Added automatic catalog synchronization when new Site Surveys are created.
-- Added `ResumeSurvey()` support for reopening an existing Site Survey without creating a duplicate survey record.
-- Added safe saved-survey switching with rollback to the previous active survey if resume fails.
-- Added Saved Site Survey selector to Measurement Setup.
-
-#### Changed
-- Existing Site Surveys can now be deliberately reopened using their original Survey ID and creation timestamp.
-- Manual Site Survey name entry continues to use the new-survey workflow.
-- Manual editing after selecting a saved survey clears the stored selection identity to prevent accidental ID/name mismatches.
-- Measurement Setup layout was compacted to accommodate the Saved Survey selector.
-- Saved Survey selector uses a vertically scrollable list while keeping its controls accessible.
-- Button heights were rebalanced for improved symmetry and use of the available display area.
-
-#### Verified
-- Saved Site Survey catalog populated successfully on hardware.
-- Existing Site Survey could be selected and resumed.
-- Resumed survey retained its original Survey ID.
-- Resuming an existing survey did not create a duplicate permanent survey record.
-- Resumed Site Survey survived physical reboot as the active survey.
-- Survey Point remained transient.
-- Saved Survey selector scrolling operated correctly.
-- Measurement Setup and action controls fit fully on the display.
-
-
-### Milestone 10.23B — Persistent Survey Point Registry & Reuse Workflow
-
-#### Added
-- Added persistent Survey Point records with globally unique Point IDs.
-- Added parent Site Survey references to persisted Survey Points.
-- Added CRC32-protected Survey Point storage under `/sentinel/survey_points/`.
-- Added in-memory Survey Point catalog with startup recovery.
-- Added monotonic Survey Point ID allocation with protection against ID reuse.
-- Added validation of Survey Point parent Site Survey records.
-- Added persistent Survey Point selection and reuse from Measurement Setup.
-- Added manager coordination for creating new and preparing saved Survey Points.
-- Added Survey Point ID support to the Wi-Fi measurement working context.
-- Added Measurement Session format v7 with persistent `survey_point_id`.
-
-#### Changed
-- Survey Points are now persistent entities rather than free-text measurement labels only.
-- Measurement records retain both Survey Point ID and human-readable Survey Point name.
-- Saved Survey Points can only be reused within the Site Survey that owns them.
-- Manual Point entry creates a new persistent Survey Point.
-- Selecting a saved Point reuses its original Point ID.
-- Working Survey Point identity is cleared after each completed measurement while the Site Survey remains active.
-- Measurement session parser remains backward compatible with formats v1 through v6.
-
-#### Verified
-- New Survey Point created and persisted successfully on hardware.
-- Saved Survey Point appeared correctly in the Point selector.
-- Existing Survey Point could be reused for additional measurements.
-- Reusing a saved Point did not create a duplicate Point entry.
-- Multiple Survey Points could be created under the same Site Survey.
-- Survey Point catalog survived physical reset.
-- Active Site Survey restored successfully after reboot.
-- Survey Point remained intentionally blank after reboot.
-- Existing saved Survey Points remained selectable after reboot.
-- New format v7 measurement sessions loaded successfully from History.
-- Legacy v1-v6 measurement sessions continued to load successfully.
 
 ## [0.5.0-alpha] - 2026-07-11
 

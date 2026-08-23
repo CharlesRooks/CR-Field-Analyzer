@@ -62,6 +62,24 @@ public:
     static const StoredSiteSurveyIndex *
         GetSavedSiteSurveyIndex(uint8_t index);
 
+    static constexpr uint8_t MaxSavedFloorPlans = 64;
+
+    static uint8_t GetSavedFloorPlanCount();
+
+    static const StoredFloorPlanIndex *
+        GetSavedFloorPlanIndex(uint8_t index);
+
+    static uint32_t GetNextFloorPlanId();
+
+    static bool CreateFloorPlanRecord(
+        uint32_t siteSurveyId,
+        const char *name,
+        const char *imagePath,
+        uint16_t sourceWidth,
+        uint16_t sourceHeight,
+        uint32_t createdEpoch,
+        uint32_t &floorPlanId);
+
     static constexpr uint8_t
         MaxSavedSiteSurveyPoints = 128;
 
@@ -153,6 +171,13 @@ private:
 
     static uint8_t savedSiteSurveyCount;
 
+    static uint32_t nextFloorPlanId;
+
+    static StoredFloorPlanIndex
+        savedFloorPlanIndex[MaxSavedFloorPlans];
+
+    static uint8_t savedFloorPlanCount;
+
     static uint32_t nextSiteSurveyPointId;
 
     static StoredSiteSurveyPointIndex
@@ -162,6 +187,7 @@ private:
     static uint8_t savedSiteSurveyPointCount;
 
     static void LoadSiteSurveySequence();
+    static void LoadFloorPlanSequence();
     static void LoadSiteSurveyPointSequence();
 
     static bool EnsureDirectories();
@@ -233,6 +259,21 @@ private:
 
     static void BuildSiteSurveyPath(
         uint32_t surveyId,
+        char *buffer,
+        size_t bufferSize);
+
+    static constexpr uint8_t
+        CurrentFloorPlanFormatVersion = 1;
+
+    static bool WriteFloorPlanRecord(
+        const StoredFloorPlan &floorPlan);
+
+    static bool ReadFloorPlanRecord(
+        uint32_t floorPlanId,
+        StoredFloorPlan &floorPlan);
+
+    static void BuildFloorPlanPath(
+        uint32_t floorPlanId,
         char *buffer,
         size_t bufferSize);
 

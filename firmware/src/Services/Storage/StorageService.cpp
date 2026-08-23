@@ -22,6 +22,13 @@ namespace
     constexpr const char *SurveyPointsDirectory =
         "/sentinel/survey_points";
 
+    constexpr const char *FloorPlansDirectory =
+        "/sentinel/floorplans";
+
+    constexpr const char *FloorPlanImagesDirectory =
+        "/sentinel/floorplans/images";
+
+
     constexpr const char *TemporarySessionPath =
         "/sentinel/sessions/session.tmp";
 
@@ -30,6 +37,10 @@ namespace
 
     constexpr const char *TemporarySiteSurveyPointPath =
         "/sentinel/survey_points/point.tmp";
+
+    constexpr const char *TemporaryFloorPlanPath =
+        "/sentinel/floorplans/floor.tmp";
+
 
     constexpr const char *ValidationPath =
         "/sentinel_test.txt";
@@ -656,6 +667,14 @@ StoredSiteSurveyIndex
 
 uint8_t StorageService::savedSiteSurveyCount = 0;
 
+uint32_t StorageService::nextFloorPlanId = 1;
+
+StoredFloorPlanIndex
+    StorageService::savedFloorPlanIndex[
+        StorageService::MaxSavedFloorPlans] = {};
+
+uint8_t StorageService::savedFloorPlanCount = 0;
+
 uint32_t StorageService::nextSiteSurveyPointId = 1;
 
 StoredSiteSurveyPointIndex
@@ -677,6 +696,8 @@ void StorageService::Begin()
     nextSessionId = 1;
     nextSiteSurveyId = 1;
     savedSiteSurveyCount = 0;
+    nextFloorPlanId = 1;
+    savedFloorPlanCount = 0;
     nextSiteSurveyPointId = 1;
     savedSiteSurveyPointCount = 0;
     loadedSession = emptyStoredSession;
@@ -696,6 +717,14 @@ void StorageService::Begin()
     {
         savedSiteSurveyIndex[index] =
             StoredSiteSurveyIndex{};
+    }
+
+    for (uint8_t index = 0;
+         index < MaxSavedFloorPlans;
+         ++index)
+    {
+        savedFloorPlanIndex[index] =
+            StoredFloorPlanIndex{};
     }
 
     for (uint16_t index = 0;
@@ -756,6 +785,7 @@ void StorageService::Begin()
     CleanupStaleTemporaryFile();
     LoadMeasurementSessions();
     LoadSiteSurveySequence();
+    LoadFloorPlanSequence();
     LoadSiteSurveyPointSequence();
 
     Serial.println(
@@ -1153,6 +1183,160 @@ bool StorageService::CreateSiteSurveyRecord(
     return true;
 }
 
+bool StorageService::CreateFloorPlanRecord(
+    uint32_t siteSurveyId,
+    const char *name,
+    const char *imagePath,
+    uint16_t sourceWidth,
+    uint16_t sourceHeight,
+    uint32_t createdEpoch,
+    uint32_t &floorPlanId)
+{
+    floorPlanId = 0;
+
+    if (externalReadOnlyAccessActive)
+    {
+        Serial.println(
+            "StorageService: Floor Plan creation blocked "
+            "while USB Storage Mode is active");
+
+        return false;
+    }
+
+    if (!available ||
+        siteSurveyId == 0 ||
+        name == nullptr ||
+        name[0] == '\0' ||
+        imagePath == nullptr ||
+        imagePath[0] == '\0')
+    {
+        return false;
+    }
+
+    if (!EnsureDirectories())
+    {
+        return false;
+    }
+
+    StoredSiteSurvey parentSurvey{};
+
+    if (!ReadSiteSurveyRecord(
+            siteSurveyId,
+            parentSurvey))
+    {
+        Serial.printf(
+            "StorageService: Floor Plan creation failed - "
+            "parent Site Survey %lu is invalid\n",
+            static_cast<unsigned long>(
+                siteSurveyId));
+
+        return false;
+    }
+
+    StoredFloorPlan floorPlan{};
+
+    floorPlan.available = true;
+    floorPlan.formatVersion =
+        CurrentFloorPlanFormatVersion;
+    floorPlan.floorPlanId = nextFloorPlanId;
+    floorPlan.siteSurveyId = siteSurveyId;
+    floorPlan.createdEpoch = createdEpoch;
+    floorPlan.sourceWidth = sourceWidth;
+    floorPlan.sourceHeight = sourceHeight;
+
+    std::strncpy(
+        floorPlan.name,
+        name,
+        StoredFloorPlan::NameCapacity - 1);
+
+    floorPlan.name[
+        StoredFloorPlan::NameCapacity - 1] = '\0';
+
+    std::strncpy(
+        floorPlan.imagePath,
+        imagePath,
+        StoredFloorPlan::ImagePathCapacity - 1);
+
+    floorPlan.imagePath[
+        StoredFloorPlan::ImagePathCapacity - 1] = '\0';
+
+    if (!WriteFloorPlanRecord(floorPlan))
+    {
+        Serial.printf(
+            "StorageService: Floor Plan %lu "
+            "creation failed\n",
+            static_cast<unsigned long>(
+                floorPlan.floorPlanId));
+
+        return false;
+    }
+
+    floorPlanId = floorPlan.floorPlanId;
+
+    StoredFloorPlanIndex indexEntry{};
+
+    indexEntry.available = true;
+    indexEntry.floorPlanId = floorPlan.floorPlanId;
+    indexEntry.siteSurveyId = floorPlan.siteSurveyId;
+    indexEntry.createdEpoch = floorPlan.createdEpoch;
+    indexEntry.sourceWidth = floorPlan.sourceWidth;
+    indexEntry.sourceHeight = floorPlan.sourceHeight;
+
+    std::strncpy(
+        indexEntry.name,
+        floorPlan.name,
+        sizeof(indexEntry.name) - 1);
+
+    indexEntry.name[
+        sizeof(indexEntry.name) - 1] = '\0';
+
+    std::strncpy(
+        indexEntry.imagePath,
+        floorPlan.imagePath,
+        sizeof(indexEntry.imagePath) - 1);
+
+    indexEntry.imagePath[
+        sizeof(indexEntry.imagePath) - 1] = '\0';
+
+    const uint8_t moveEnd =
+        savedFloorPlanCount < MaxSavedFloorPlans
+            ? savedFloorPlanCount
+            : MaxSavedFloorPlans - 1;
+
+    for (uint8_t index = moveEnd;
+         index > 0;
+         --index)
+    {
+        savedFloorPlanIndex[index] =
+            savedFloorPlanIndex[index - 1];
+    }
+
+    savedFloorPlanIndex[0] = indexEntry;
+
+    if (savedFloorPlanCount < MaxSavedFloorPlans)
+    {
+        ++savedFloorPlanCount;
+    }
+
+    ++nextFloorPlanId;
+
+    if (nextFloorPlanId == 0)
+    {
+        nextFloorPlanId = 1;
+    }
+
+    filesystemUsedBytes = SD.usedBytes();
+
+    Serial.printf(
+        "StorageService: Floor Plan %lu created "
+        "for Site Survey %lu: %s\n",
+        static_cast<unsigned long>(floorPlanId),
+        static_cast<unsigned long>(siteSurveyId),
+        floorPlan.name);
+
+    return true;
+}
+
 bool StorageService::CreateSiteSurveyPointRecord(
     uint32_t siteSurveyId,
     const char *name,
@@ -1317,6 +1501,28 @@ StorageService::GetSavedSiteSurveyIndex(
     return &savedSiteSurveyIndex[index];
 }
 
+uint32_t StorageService::GetNextFloorPlanId()
+{
+    return nextFloorPlanId;
+}
+
+uint8_t StorageService::GetSavedFloorPlanCount()
+{
+    return savedFloorPlanCount;
+}
+
+const StoredFloorPlanIndex *
+StorageService::GetSavedFloorPlanIndex(
+    uint8_t index)
+{
+    if (index >= savedFloorPlanCount)
+    {
+        return nullptr;
+    }
+
+    return &savedFloorPlanIndex[index];
+}
+
 uint32_t StorageService::GetNextSiteSurveyPointId()
 {
     return nextSiteSurveyPointId;
@@ -1448,6 +1654,18 @@ bool StorageService::EnsureDirectories()
 
     if (!SD.exists(SurveyPointsDirectory) &&
         !SD.mkdir(SurveyPointsDirectory))
+    {
+        return false;
+    }
+
+    if (!SD.exists(FloorPlansDirectory) &&
+        !SD.mkdir(FloorPlansDirectory))
+    {
+        return false;
+    }
+
+    if (!SD.exists(FloorPlanImagesDirectory) &&
+        !SD.mkdir(FloorPlanImagesDirectory))
     {
         return false;
     }
@@ -2214,6 +2432,206 @@ void StorageService::LoadSiteSurveySequence()
             nextSiteSurveyId));
 }
 
+void StorageService::LoadFloorPlanSequence()
+{
+    savedFloorPlanCount = 0;
+
+    for (uint8_t index = 0;
+         index < MaxSavedFloorPlans;
+         ++index)
+    {
+        savedFloorPlanIndex[index] =
+            StoredFloorPlanIndex{};
+    }
+
+    uint32_t maximumFloorPlanId = 0;
+
+    File directory = SD.open(FloorPlansDirectory);
+
+    if (!directory || !directory.isDirectory())
+    {
+        Serial.println(
+            "StorageService: Floor Plan directory unavailable");
+        return;
+    }
+
+    File entry = directory.openNextFile();
+
+    while (entry)
+    {
+        uint32_t candidateFloorPlanId = 0;
+
+        if (!entry.isDirectory())
+        {
+            const char *path = entry.name();
+            const char *name = std::strrchr(path, '/');
+
+            name = name == nullptr ? path : name + 1;
+
+            constexpr const char Prefix[] = "floor_";
+            constexpr size_t PrefixLength =
+                sizeof(Prefix) - 1;
+
+            if (std::strncmp(
+                    name,
+                    Prefix,
+                    PrefixLength) == 0)
+            {
+                const char *numberStart =
+                    name + PrefixLength;
+
+                char *numberEnd = nullptr;
+
+                const unsigned long parsed =
+                    std::strtoul(
+                        numberStart,
+                        &numberEnd,
+                        10);
+
+                if (numberEnd != numberStart &&
+                    parsed != 0 &&
+                    std::strcmp(
+                        numberEnd,
+                        ".txt") == 0)
+                {
+                    candidateFloorPlanId =
+                        static_cast<uint32_t>(parsed);
+
+                    if (candidateFloorPlanId >
+                        maximumFloorPlanId)
+                    {
+                        maximumFloorPlanId =
+                            candidateFloorPlanId;
+                    }
+                }
+            }
+        }
+
+        entry.close();
+
+        if (candidateFloorPlanId != 0)
+        {
+            StoredFloorPlan floorPlan{};
+
+            if (!ReadFloorPlanRecord(
+                    candidateFloorPlanId,
+                    floorPlan))
+            {
+                Serial.printf(
+                    "StorageService: Floor Plan %lu "
+                    "skipped - record invalid\n",
+                    static_cast<unsigned long>(
+                        candidateFloorPlanId));
+            }
+            else
+            {
+                StoredSiteSurvey parentSurvey{};
+
+                if (!ReadSiteSurveyRecord(
+                        floorPlan.siteSurveyId,
+                        parentSurvey))
+                {
+                    Serial.printf(
+                        "StorageService: Floor Plan %lu "
+                        "skipped - parent Site Survey %lu "
+                        "is invalid\n",
+                        static_cast<unsigned long>(
+                            floorPlan.floorPlanId),
+                        static_cast<unsigned long>(
+                            floorPlan.siteSurveyId));
+                }
+                else
+                {
+                    uint8_t insertIndex = 0;
+
+                    while (
+                        insertIndex < savedFloorPlanCount &&
+                        savedFloorPlanIndex[insertIndex]
+                                .floorPlanId >
+                            floorPlan.floorPlanId)
+                    {
+                        ++insertIndex;
+                    }
+
+                    if (insertIndex < MaxSavedFloorPlans)
+                    {
+                        const uint8_t moveEnd =
+                            savedFloorPlanCount < MaxSavedFloorPlans
+                                ? savedFloorPlanCount
+                                : MaxSavedFloorPlans - 1;
+
+                        for (uint8_t moveIndex = moveEnd;
+                             moveIndex > insertIndex;
+                             --moveIndex)
+                        {
+                            savedFloorPlanIndex[moveIndex] =
+                                savedFloorPlanIndex[
+                                    moveIndex - 1];
+                        }
+
+                        StoredFloorPlanIndex indexEntry{};
+
+                        indexEntry.available = true;
+                        indexEntry.floorPlanId =
+                            floorPlan.floorPlanId;
+                        indexEntry.siteSurveyId =
+                            floorPlan.siteSurveyId;
+                        indexEntry.createdEpoch =
+                            floorPlan.createdEpoch;
+                        indexEntry.sourceWidth =
+                            floorPlan.sourceWidth;
+                        indexEntry.sourceHeight =
+                            floorPlan.sourceHeight;
+
+                        std::strncpy(
+                            indexEntry.name,
+                            floorPlan.name,
+                            sizeof(indexEntry.name) - 1);
+
+                        indexEntry.name[
+                            sizeof(indexEntry.name) - 1] = '\0';
+
+                        std::strncpy(
+                            indexEntry.imagePath,
+                            floorPlan.imagePath,
+                            sizeof(indexEntry.imagePath) - 1);
+
+                        indexEntry.imagePath[
+                            sizeof(indexEntry.imagePath) - 1] = '\0';
+
+                        savedFloorPlanIndex[insertIndex] =
+                            indexEntry;
+
+                        if (savedFloorPlanCount <
+                            MaxSavedFloorPlans)
+                        {
+                            ++savedFloorPlanCount;
+                        }
+                    }
+                }
+            }
+        }
+
+        entry = directory.openNextFile();
+    }
+
+    directory.close();
+
+    nextFloorPlanId = maximumFloorPlanId + 1;
+
+    if (nextFloorPlanId == 0)
+    {
+        nextFloorPlanId = 1;
+    }
+
+    Serial.printf(
+        "StorageService: Indexed %u saved Floor Plan%s; "
+        "next ID %lu\n",
+        savedFloorPlanCount,
+        savedFloorPlanCount == 1 ? "" : "s",
+        static_cast<unsigned long>(nextFloorPlanId));
+}
+
 void StorageService::LoadSiteSurveyPointSequence()
 {
     savedSiteSurveyPointCount = 0;
@@ -2597,6 +3015,407 @@ bool StorageService::WriteSiteSurveyRecord(
 
         return false;
     }
+
+    return true;
+}
+
+bool StorageService::WriteFloorPlanRecord(
+    const StoredFloorPlan &floorPlan)
+{
+    if (SD.exists(TemporaryFloorPlanPath) &&
+        !SD.remove(TemporaryFloorPlanPath))
+    {
+        Serial.println(
+            "StorageService: Floor Plan save failed - "
+            "stale temporary file could not be removed");
+        return false;
+    }
+
+    File file = SD.open(
+        TemporaryFloorPlanPath,
+        FILE_WRITE);
+
+    if (!file)
+    {
+        return false;
+    }
+
+    uint32_t crc = Crc32Initial;
+
+    char encodedName[
+        StoredFloorPlan::NameCapacity * 3] = {};
+
+    char encodedImagePath[
+        StoredFloorPlan::ImagePathCapacity * 3] = {};
+
+    const bool encoded =
+        EncodeStorageText(
+            floorPlan.name,
+            encodedName,
+            sizeof(encodedName)) &&
+        EncodeStorageText(
+            floorPlan.imagePath,
+            encodedImagePath,
+            sizeof(encodedImagePath));
+
+    const bool written =
+        encoded &&
+        WriteCrcLine(
+            file,
+            crc,
+            "version=%u\n",
+            CurrentFloorPlanFormatVersion) &&
+        WriteCrcLine(
+            file,
+            crc,
+            "floor_plan_id=%lu\n",
+            static_cast<unsigned long>(
+                floorPlan.floorPlanId)) &&
+        WriteCrcLine(
+            file,
+            crc,
+            "site_survey_id=%lu\n",
+            static_cast<unsigned long>(
+                floorPlan.siteSurveyId)) &&
+        WriteCrcLine(
+            file,
+            crc,
+            "created_epoch=%lu\n",
+            static_cast<unsigned long>(
+                floorPlan.createdEpoch)) &&
+        WriteCrcLine(
+            file,
+            crc,
+            "source_width=%u\n",
+            static_cast<unsigned int>(
+                floorPlan.sourceWidth)) &&
+        WriteCrcLine(
+            file,
+            crc,
+            "source_height=%u\n",
+            static_cast<unsigned int>(
+                floorPlan.sourceHeight)) &&
+        WriteCrcLine(
+            file,
+            crc,
+            "name=%s\n",
+            encodedName) &&
+        WriteCrcLine(
+            file,
+            crc,
+            "image_path=%s\n",
+            encodedImagePath);
+
+    bool checksumWritten = false;
+
+    if (written)
+    {
+        const uint32_t finalCrc =
+            crc ^ 0xFFFFFFFFUL;
+
+        checksumWritten =
+            file.printf(
+                "checksum_crc32=%08lX\n",
+                static_cast<unsigned long>(
+                    finalCrc)) > 0;
+    }
+
+    file.flush();
+    file.close();
+
+    if (!written || !checksumWritten)
+    {
+        SD.remove(TemporaryFloorPlanPath);
+        return false;
+    }
+
+    char finalPath[64];
+
+    BuildFloorPlanPath(
+        floorPlan.floorPlanId,
+        finalPath,
+        sizeof(finalPath));
+
+    if (SD.exists(finalPath))
+    {
+        SD.remove(TemporaryFloorPlanPath);
+
+        Serial.println(
+            "StorageService: Floor Plan save failed - "
+            "destination already exists");
+
+        return false;
+    }
+
+    if (!SD.rename(
+            TemporaryFloorPlanPath,
+            finalPath))
+    {
+        SD.remove(TemporaryFloorPlanPath);
+        return false;
+    }
+
+    return true;
+}
+
+bool StorageService::ReadFloorPlanRecord(
+    uint32_t floorPlanId,
+    StoredFloorPlan &floorPlan)
+{
+    floorPlan = StoredFloorPlan{};
+
+    if (!available || floorPlanId == 0)
+    {
+        return false;
+    }
+
+    char path[64];
+
+    BuildFloorPlanPath(
+        floorPlanId,
+        path,
+        sizeof(path));
+
+    File file = SD.open(path, FILE_READ);
+
+    if (!file)
+    {
+        return false;
+    }
+
+    uint32_t version = 0;
+    uint32_t storedFloorPlanId = 0;
+    uint32_t siteSurveyId = 0;
+    uint32_t createdEpoch = 0;
+    uint32_t sourceWidth = 0;
+    uint32_t sourceHeight = 0;
+    uint32_t storedChecksum = 0;
+    uint32_t calculatedCrc = Crc32Initial;
+
+    char decodedName[
+        StoredFloorPlan::NameCapacity] = {};
+
+    char decodedImagePath[
+        StoredFloorPlan::ImagePathCapacity] = {};
+
+    bool versionSeen = false;
+    bool floorPlanIdSeen = false;
+    bool siteSurveyIdSeen = false;
+    bool createdEpochSeen = false;
+    bool sourceWidthSeen = false;
+    bool sourceHeightSeen = false;
+    bool nameSeen = false;
+    bool imagePathSeen = false;
+    bool checksumSeen = false;
+    bool valid = true;
+
+    while (file.available() && valid)
+    {
+        const String rawLine =
+            file.readStringUntil('\n');
+
+        String line = rawLine;
+        line.trim();
+
+        if (line.startsWith("checksum_crc32="))
+        {
+            if (checksumSeen ||
+                !ParseHexUnsigned(
+                    line.substring(15),
+                    storedChecksum))
+            {
+                valid = false;
+                break;
+            }
+
+            checksumSeen = true;
+            continue;
+        }
+
+        if (checksumSeen)
+        {
+            if (line.length() != 0)
+            {
+                valid = false;
+            }
+
+            continue;
+        }
+
+        calculatedCrc = UpdateCrc32(
+            calculatedCrc,
+            rawLine);
+
+        const uint8_t newline = '\n';
+
+        calculatedCrc = UpdateCrc32(
+            calculatedCrc,
+            &newline,
+            1);
+
+        if (line.length() == 0)
+        {
+            continue;
+        }
+
+        const int separator = line.indexOf('=');
+
+        if (separator <= 0)
+        {
+            valid = false;
+            break;
+        }
+
+        const String key = line.substring(0, separator);
+        const String value = line.substring(separator + 1);
+
+        if (key == "version")
+        {
+            if (versionSeen ||
+                !ParseUnsigned(value, version))
+            {
+                valid = false;
+            }
+
+            versionSeen = true;
+        }
+        else if (key == "floor_plan_id")
+        {
+            if (floorPlanIdSeen ||
+                !ParseUnsigned(
+                    value,
+                    storedFloorPlanId))
+            {
+                valid = false;
+            }
+
+            floorPlanIdSeen = true;
+        }
+        else if (key == "site_survey_id")
+        {
+            if (siteSurveyIdSeen ||
+                !ParseUnsigned(value, siteSurveyId))
+            {
+                valid = false;
+            }
+
+            siteSurveyIdSeen = true;
+        }
+        else if (key == "created_epoch")
+        {
+            if (createdEpochSeen ||
+                !ParseUnsigned(value, createdEpoch))
+            {
+                valid = false;
+            }
+
+            createdEpochSeen = true;
+        }
+        else if (key == "source_width")
+        {
+            if (sourceWidthSeen ||
+                !ParseUnsigned(value, sourceWidth))
+            {
+                valid = false;
+            }
+
+            sourceWidthSeen = true;
+        }
+        else if (key == "source_height")
+        {
+            if (sourceHeightSeen ||
+                !ParseUnsigned(value, sourceHeight))
+            {
+                valid = false;
+            }
+
+            sourceHeightSeen = true;
+        }
+        else if (key == "name")
+        {
+            if (nameSeen ||
+                !DecodeStorageText(
+                    value,
+                    decodedName,
+                    sizeof(decodedName)))
+            {
+                valid = false;
+            }
+
+            nameSeen = true;
+        }
+        else if (key == "image_path")
+        {
+            if (imagePathSeen ||
+                !DecodeStorageText(
+                    value,
+                    decodedImagePath,
+                    sizeof(decodedImagePath)))
+            {
+                valid = false;
+            }
+
+            imagePathSeen = true;
+        }
+        else
+        {
+            valid = false;
+        }
+    }
+
+    file.close();
+
+    const uint32_t finalCrc =
+        calculatedCrc ^ 0xFFFFFFFFUL;
+
+    if (!valid ||
+        !versionSeen ||
+        !floorPlanIdSeen ||
+        !siteSurveyIdSeen ||
+        !createdEpochSeen ||
+        !sourceWidthSeen ||
+        !sourceHeightSeen ||
+        !nameSeen ||
+        !imagePathSeen ||
+        !checksumSeen ||
+        version != CurrentFloorPlanFormatVersion ||
+        storedFloorPlanId != floorPlanId ||
+        siteSurveyId == 0 ||
+        sourceWidth > 0xFFFFUL ||
+        sourceHeight > 0xFFFFUL ||
+        decodedName[0] == '\0' ||
+        decodedImagePath[0] == '\0' ||
+        storedChecksum != finalCrc)
+    {
+        return false;
+    }
+
+    floorPlan.available = true;
+    floorPlan.formatVersion =
+        static_cast<uint8_t>(version);
+    floorPlan.floorPlanId = storedFloorPlanId;
+    floorPlan.siteSurveyId = siteSurveyId;
+    floorPlan.createdEpoch = createdEpoch;
+    floorPlan.sourceWidth =
+        static_cast<uint16_t>(sourceWidth);
+    floorPlan.sourceHeight =
+        static_cast<uint16_t>(sourceHeight);
+
+    std::strncpy(
+        floorPlan.name,
+        decodedName,
+        sizeof(floorPlan.name) - 1);
+
+    floorPlan.name[
+        sizeof(floorPlan.name) - 1] = '\0';
+
+    std::strncpy(
+        floorPlan.imagePath,
+        decodedImagePath,
+        sizeof(floorPlan.imagePath) - 1);
+
+    floorPlan.imagePath[
+        sizeof(floorPlan.imagePath) - 1] = '\0';
 
     return true;
 }
@@ -4546,6 +5365,24 @@ void StorageService::BuildSiteSurveyPath(
         "%s/survey_%06lu.txt",
         SurveysDirectory,
         static_cast<unsigned long>(surveyId));
+}
+
+void StorageService::BuildFloorPlanPath(
+    uint32_t floorPlanId,
+    char *buffer,
+    size_t bufferSize)
+{
+    if (buffer == nullptr || bufferSize == 0)
+    {
+        return;
+    }
+
+    std::snprintf(
+        buffer,
+        bufferSize,
+        "%s/floor_%06lu.txt",
+        FloorPlansDirectory,
+        static_cast<unsigned long>(floorPlanId));
 }
 
 void StorageService::BuildSiteSurveyPointPath(
