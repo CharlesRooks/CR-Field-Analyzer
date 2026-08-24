@@ -116,6 +116,14 @@ public:
         uint32_t createdEpoch,
         uint32_t &pointId);
 
+    // Assigns or clears a persistent map position. floorPlanId == 0
+    // clears the mapping and requires mapX/mapY to both be zero.
+    static bool SetSiteSurveyPointMapPosition(
+        uint32_t pointId,
+        uint32_t floorPlanId,
+        uint16_t mapX,
+        uint16_t mapY);
+
     static bool SaveMeasurementSummary(
         const WiFiMeasurementSummary &summary,
         uint32_t completedAtMs,
@@ -319,16 +327,27 @@ private:
         size_t bufferSize);
 
     static constexpr uint8_t
-        CurrentSiteSurveyPointFormatVersion = 1;
+        CurrentSiteSurveyPointFormatVersion = 2;
+
+    static constexpr uint8_t
+        LegacySiteSurveyPointFormatVersion = 1;
 
     static bool WriteSiteSurveyPointRecord(
-        const StoredSiteSurveyPoint &point);
+        const StoredSiteSurveyPoint &point,
+        bool replaceExisting = false);
+
+    static bool RecoverInterruptedSiteSurveyPointUpdates();
 
     static bool ReadSiteSurveyPointRecord(
         uint32_t pointId,
         StoredSiteSurveyPoint &point);
 
     static void BuildSiteSurveyPointPath(
+        uint32_t pointId,
+        char *buffer,
+        size_t bufferSize);
+
+    static void BuildSiteSurveyPointBackupPath(
         uint32_t pointId,
         char *buffer,
         size_t bufferSize);

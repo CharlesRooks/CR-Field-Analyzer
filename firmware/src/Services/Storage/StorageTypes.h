@@ -107,8 +107,8 @@ struct StoredFloorPlan
 
     // Original raster dimensions are retained as metadata.
     // Zero means the dimensions were not known when the record
-    // was registered. Survey Point coordinates will be stored
-    // independently as normalized values in a later milestone.
+    // was registered. Survey Point positions use normalized
+    // 0-10000 coordinates and do not depend on these pixels.
     uint16_t sourceWidth = 0;
     uint16_t sourceHeight = 0;
 
@@ -155,12 +155,21 @@ struct StoredSiteSurveyPoint
     static constexpr uint8_t NameCapacity =
         WiFiMeasurementSummary::SurveyPointCapacity;
 
+    // Map coordinates are normalized to the source Floor Plan.
+    // 0 is the top/left edge and 10000 is the bottom/right edge.
+    // floorPlanId == 0 means the Point is intentionally unmapped.
+    static constexpr uint16_t MapCoordinateMaximum = 10000;
+
     bool available = false;
     uint8_t formatVersion = 0;
 
     uint32_t pointId = 0;
     uint32_t siteSurveyId = 0;
+    uint32_t floorPlanId = 0;
     uint32_t createdEpoch = 0;
+
+    uint16_t mapX = 0;
+    uint16_t mapY = 0;
 
     char name[NameCapacity] = {};
 };
@@ -171,7 +180,11 @@ struct StoredSiteSurveyPointIndex
 
     uint32_t pointId = 0;
     uint32_t siteSurveyId = 0;
+    uint32_t floorPlanId = 0;
     uint32_t createdEpoch = 0;
+
+    uint16_t mapX = 0;
+    uint16_t mapY = 0;
 
     char name[
         StoredSiteSurveyPoint::NameCapacity] = {};

@@ -105,6 +105,34 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 * After a completed measurement, the Scan screen correctly returns to `Point: Set survey location` for the next survey point.
 
 
+### Milestone 10.24C — Floor Plan Assignment & Persistent Survey Point Coordinates
+
+#### Added
+- Added persistent Floor Plan references to Survey Point records.
+- Added normalized Survey Point map coordinates using a 0–10000 coordinate space.
+- Added `floor_plan_id`, `map_x`, and `map_y` fields to persistent Survey Points.
+- Added Survey Point storage format version 2.
+- Added validation that a referenced Floor Plan belongs to the same Site Survey as the Survey Point.
+- Added coordinate-range validation for mapped Survey Points.
+- Added protected Survey Point record replacement with backup recovery for future coordinate updates.
+
+#### Changed
+- New Survey Points are now stored using format version 2.
+- Unmapped Survey Points use `floor_plan_id=0`, `map_x=0`, and `map_y=0`.
+- Existing format version 1 Survey Points remain fully backward compatible and load as unmapped Points.
+- Persistent Survey Point records are now ready to support Floor Plan positioning without changing measurement-session identity.
+
+#### Verified
+- Firmware compiled successfully.
+- Existing version 1 Survey Points remained selectable and reusable.
+- Existing version 1 Points could be used for new measurements without error.
+- New Survey Point records were written successfully using format version 2.
+- New version 2 Point records contained `floor_plan_id`, `map_x`, and `map_y`.
+- Unmapped version 2 Points correctly stored zero-valued Floor Plan and coordinate fields.
+- Version 1 and version 2 Survey Points coexisted successfully after reboot.
+- Existing Floor Plan catalog remained intact.
+- Existing Wi-Fi History sessions continued to load normally.
+
 ### Milestone 10.24B — Floor Plan Import, Catalog & Safe USB Transfer
 
 #### Added

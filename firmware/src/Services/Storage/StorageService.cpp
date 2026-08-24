@@ -925,6 +925,7 @@ void StorageService::Begin()
     LoadSiteSurveySequence();
     LoadFloorPlanSequence();
     RefreshFloorPlanImportCatalog();
+    RecoverInterruptedSiteSurveyPointUpdates();
     LoadSiteSurveyPointSequence();
 
     Serial.println(
@@ -1924,6 +1925,9 @@ bool StorageService::CreateSiteSurveyPointRecord(
         nextSiteSurveyPointId;
     point.siteSurveyId =
         siteSurveyId;
+    point.floorPlanId = 0;
+    point.mapX = 0;
+    point.mapY = 0;
     point.createdEpoch =
         createdEpoch;
 
@@ -1954,7 +1958,10 @@ bool StorageService::CreateSiteSurveyPointRecord(
     indexEntry.available = true;
     indexEntry.pointId = point.pointId;
     indexEntry.siteSurveyId = point.siteSurveyId;
+    indexEntry.floorPlanId = point.floorPlanId;
     indexEntry.createdEpoch = point.createdEpoch;
+    indexEntry.mapX = point.mapX;
+    indexEntry.mapY = point.mapY;
 
     std::strncpy(
         indexEntry.name,
@@ -2003,6 +2010,147 @@ bool StorageService::CreateSiteSurveyPointRecord(
         static_cast<unsigned long>(pointId),
         static_cast<unsigned long>(siteSurveyId),
         point.name);
+
+    return true;
+}
+
+bool StorageService::SetSiteSurveyPointMapPosition(
+    uint32_t pointId,
+    uint32_t floorPlanId,
+    uint16_t mapX,
+    uint16_t mapY)
+{
+    if (externalReadOnlyAccessActive)
+    {
+        Serial.println(
+            "StorageService: Survey Point map update blocked "
+            "while USB Storage Mode is active");
+        return false;
+    }
+
+    if (!available ||
+        pointId == 0 ||
+        mapX > StoredSiteSurveyPoint::MapCoordinateMaximum ||
+        mapY > StoredSiteSurveyPoint::MapCoordinateMaximum)
+    {
+        return false;
+    }
+
+    if (floorPlanId == 0)
+    {
+        if (mapX != 0 || mapY != 0)
+        {
+            return false;
+        }
+    }
+
+    StoredSiteSurveyPoint point{};
+
+    if (!ReadSiteSurveyPointRecord(
+            pointId,
+            point))
+    {
+        Serial.printf(
+            "StorageService: Survey Point %lu map update "
+            "failed - Point record invalid\n",
+            static_cast<unsigned long>(pointId));
+        return false;
+    }
+
+    StoredSiteSurvey parentSurvey{};
+
+    if (!ReadSiteSurveyRecord(
+            point.siteSurveyId,
+            parentSurvey))
+    {
+        Serial.printf(
+            "StorageService: Survey Point %lu map update "
+            "failed - parent Site Survey %lu invalid\n",
+            static_cast<unsigned long>(pointId),
+            static_cast<unsigned long>(
+                point.siteSurveyId));
+        return false;
+    }
+
+    if (floorPlanId != 0)
+    {
+        StoredFloorPlan floorPlan{};
+
+        if (!ReadFloorPlanRecord(
+                floorPlanId,
+                floorPlan) ||
+            floorPlan.siteSurveyId !=
+                point.siteSurveyId ||
+            !IsSupportedFloorPlanImage(
+                floorPlan.imagePath) ||
+            !SD.exists(floorPlan.imagePath))
+        {
+            Serial.printf(
+                "StorageService: Survey Point %lu map update "
+                "failed - Floor Plan %lu does not belong to "
+                "Site Survey %lu or is unavailable\n",
+                static_cast<unsigned long>(pointId),
+                static_cast<unsigned long>(floorPlanId),
+                static_cast<unsigned long>(
+                    point.siteSurveyId));
+            return false;
+        }
+    }
+
+    point.available = true;
+    point.formatVersion =
+        CurrentSiteSurveyPointFormatVersion;
+    point.floorPlanId = floorPlanId;
+    point.mapX = mapX;
+    point.mapY = mapY;
+
+    if (!WriteSiteSurveyPointRecord(
+            point,
+            true))
+    {
+        Serial.printf(
+            "StorageService: Survey Point %lu map update "
+            "failed while replacing record\n",
+            static_cast<unsigned long>(pointId));
+        return false;
+    }
+
+    for (uint8_t index = 0;
+         index < savedSiteSurveyPointCount;
+         ++index)
+    {
+        StoredSiteSurveyPointIndex &entry =
+            savedSiteSurveyPointIndex[index];
+
+        if (entry.available &&
+            entry.pointId == pointId)
+        {
+            entry.floorPlanId = floorPlanId;
+            entry.mapX = mapX;
+            entry.mapY = mapY;
+            break;
+        }
+    }
+
+    filesystemUsedBytes = SD.usedBytes();
+
+    if (floorPlanId == 0)
+    {
+        Serial.printf(
+            "StorageService: Survey Point %lu map position "
+            "cleared\n",
+            static_cast<unsigned long>(pointId));
+    }
+    else
+    {
+        Serial.printf(
+            "StorageService: Survey Point %lu mapped to "
+            "Floor Plan %lu at %u,%u\n",
+            static_cast<unsigned long>(pointId),
+            static_cast<unsigned long>(floorPlanId),
+            static_cast<unsigned int>(mapX),
+            static_cast<unsigned int>(mapY));
+    }
 
     return true;
 }
@@ -3302,6 +3450,40 @@ void StorageService::LoadSiteSurveyPointSequence()
                 }
                 else
                 {
+                    uint32_t indexedFloorPlanId =
+                        point.floorPlanId;
+                    uint16_t indexedMapX = point.mapX;
+                    uint16_t indexedMapY = point.mapY;
+
+                    if (point.floorPlanId != 0)
+                    {
+                        StoredFloorPlan floorPlan{};
+
+                        if (!ReadFloorPlanRecord(
+                                point.floorPlanId,
+                                floorPlan) ||
+                            floorPlan.siteSurveyId !=
+                                point.siteSurveyId ||
+                            !IsSupportedFloorPlanImage(
+                                floorPlan.imagePath) ||
+                            !SD.exists(floorPlan.imagePath))
+                        {
+                            Serial.printf(
+                                "StorageService: Survey Point %lu "
+                                "map reference to Floor Plan %lu "
+                                "is unavailable; Point retained "
+                                "as unmapped in catalog\n",
+                                static_cast<unsigned long>(
+                                    point.pointId),
+                                static_cast<unsigned long>(
+                                    point.floorPlanId));
+
+                            indexedFloorPlanId = 0;
+                            indexedMapX = 0;
+                            indexedMapY = 0;
+                        }
+                    }
+
                     uint8_t insertIndex = 0;
 
                     while (
@@ -3337,7 +3519,11 @@ void StorageService::LoadSiteSurveyPointSequence()
                         indexEntry.available = true;
                         indexEntry.pointId = point.pointId;
                         indexEntry.siteSurveyId = point.siteSurveyId;
+                        indexEntry.floorPlanId =
+                            indexedFloorPlanId;
                         indexEntry.createdEpoch = point.createdEpoch;
+                        indexEntry.mapX = indexedMapX;
+                        indexEntry.mapY = indexedMapY;
 
                         std::strncpy(
                             indexEntry.name,
@@ -3977,8 +4163,21 @@ bool StorageService::ReadFloorPlanRecord(
 }
 
 bool StorageService::WriteSiteSurveyPointRecord(
-    const StoredSiteSurveyPoint &point)
+    const StoredSiteSurveyPoint &point,
+    bool replaceExisting)
 {
+    if (point.pointId == 0 ||
+        point.siteSurveyId == 0 ||
+        point.mapX >
+            StoredSiteSurveyPoint::MapCoordinateMaximum ||
+        point.mapY >
+            StoredSiteSurveyPoint::MapCoordinateMaximum ||
+        (point.floorPlanId == 0 &&
+         (point.mapX != 0 || point.mapY != 0)))
+    {
+        return false;
+    }
+
     if (SD.exists(TemporarySiteSurveyPointPath) &&
         !SD.remove(TemporarySiteSurveyPointPath))
     {
@@ -4031,6 +4230,24 @@ bool StorageService::WriteSiteSurveyPointRecord(
         WriteCrcLine(
             file,
             crc,
+            "floor_plan_id=%lu\n",
+            static_cast<unsigned long>(
+                point.floorPlanId)) &&
+        WriteCrcLine(
+            file,
+            crc,
+            "map_x=%u\n",
+            static_cast<unsigned int>(
+                point.mapX)) &&
+        WriteCrcLine(
+            file,
+            crc,
+            "map_y=%u\n",
+            static_cast<unsigned int>(
+                point.mapY)) &&
+        WriteCrcLine(
+            file,
+            crc,
             "created_epoch=%lu\n",
             static_cast<unsigned long>(
                 point.createdEpoch)) &&
@@ -4070,14 +4287,62 @@ bool StorageService::WriteSiteSurveyPointRecord(
         finalPath,
         sizeof(finalPath));
 
-    if (SD.exists(finalPath))
+    if (!replaceExisting)
+    {
+        if (SD.exists(finalPath))
+        {
+            SD.remove(TemporarySiteSurveyPointPath);
+
+            Serial.println(
+                "StorageService: Survey Point save failed - "
+                "destination already exists");
+
+            return false;
+        }
+
+        if (!SD.rename(
+                TemporarySiteSurveyPointPath,
+                finalPath))
+        {
+            SD.remove(TemporarySiteSurveyPointPath);
+            return false;
+        }
+
+        return true;
+    }
+
+    if (!SD.exists(finalPath))
     {
         SD.remove(TemporarySiteSurveyPointPath);
 
         Serial.println(
-            "StorageService: Survey Point save failed - "
-            "destination already exists");
+            "StorageService: Survey Point update failed - "
+            "existing record is missing");
+        return false;
+    }
 
+    char backupPath[64];
+
+    BuildSiteSurveyPointBackupPath(
+        point.pointId,
+        backupPath,
+        sizeof(backupPath));
+
+    if (SD.exists(backupPath))
+    {
+        // A stale backup must be resolved by startup recovery before
+        // another update is attempted; never discard it here.
+        SD.remove(TemporarySiteSurveyPointPath);
+
+        Serial.println(
+            "StorageService: Survey Point update blocked - "
+            "unresolved backup record exists");
+        return false;
+    }
+
+    if (!SD.rename(finalPath, backupPath))
+    {
+        SD.remove(TemporarySiteSurveyPointPath);
         return false;
     }
 
@@ -4085,11 +4350,168 @@ bool StorageService::WriteSiteSurveyPointRecord(
             TemporarySiteSurveyPointPath,
             finalPath))
     {
+        const bool restored =
+            SD.rename(backupPath, finalPath);
+
+        Serial.printf(
+            "StorageService: Survey Point update failed - "
+            "original record restore %s\n",
+            restored ? "succeeded" : "FAILED");
+
         SD.remove(TemporarySiteSurveyPointPath);
         return false;
     }
 
+    if (!SD.remove(backupPath))
+    {
+        Serial.println(
+            "StorageService: Warning - Survey Point update "
+            "committed but backup cleanup failed");
+    }
+
     return true;
+}
+
+bool StorageService::RecoverInterruptedSiteSurveyPointUpdates()
+{
+    bool recoveryOk = true;
+
+    File directory = SD.open(SurveyPointsDirectory);
+
+    if (!directory || !directory.isDirectory())
+    {
+        return false;
+    }
+
+    File entry = directory.openNextFile();
+
+    while (entry)
+    {
+        uint32_t backupPointId = 0;
+
+        if (!entry.isDirectory())
+        {
+            const char *path = entry.name();
+            const char *name = std::strrchr(path, '/');
+
+            name = name == nullptr ? path : name + 1;
+
+            constexpr const char Prefix[] = "point_";
+            constexpr size_t PrefixLength =
+                sizeof(Prefix) - 1;
+
+            if (std::strncmp(
+                    name,
+                    Prefix,
+                    PrefixLength) == 0)
+            {
+                const char *numberStart =
+                    name + PrefixLength;
+
+                char *numberEnd = nullptr;
+
+                const unsigned long parsed =
+                    std::strtoul(
+                        numberStart,
+                        &numberEnd,
+                        10);
+
+                if (numberEnd != numberStart &&
+                    parsed != 0 &&
+                    std::strcmp(
+                        numberEnd,
+                        ".bak") == 0)
+                {
+                    backupPointId =
+                        static_cast<uint32_t>(parsed);
+                }
+            }
+        }
+
+        entry.close();
+
+        if (backupPointId != 0)
+        {
+            char finalPath[64];
+            char backupPath[64];
+
+            BuildSiteSurveyPointPath(
+                backupPointId,
+                finalPath,
+                sizeof(finalPath));
+
+            BuildSiteSurveyPointBackupPath(
+                backupPointId,
+                backupPath,
+                sizeof(backupPath));
+
+            if (SD.exists(finalPath))
+            {
+                if (!SD.remove(backupPath))
+                {
+                    recoveryOk = false;
+
+                    Serial.printf(
+                        "StorageService: Warning - stale Survey "
+                        "Point %lu backup could not be removed\n",
+                        static_cast<unsigned long>(
+                            backupPointId));
+                }
+                else
+                {
+                    Serial.printf(
+                        "StorageService: Removed completed Survey "
+                        "Point %lu update backup\n",
+                        static_cast<unsigned long>(
+                            backupPointId));
+                }
+            }
+            else if (!SD.rename(
+                         backupPath,
+                         finalPath))
+            {
+                recoveryOk = false;
+
+                Serial.printf(
+                    "StorageService: WARNING - Survey Point %lu "
+                    "backup could not be restored\n",
+                    static_cast<unsigned long>(
+                        backupPointId));
+            }
+            else
+            {
+                Serial.printf(
+                    "StorageService: Restored Survey Point %lu "
+                    "after interrupted map update\n",
+                    static_cast<unsigned long>(
+                        backupPointId));
+            }
+        }
+
+        entry = directory.openNextFile();
+    }
+
+    directory.close();
+
+    if (SD.exists(TemporarySiteSurveyPointPath))
+    {
+        if (!SD.remove(TemporarySiteSurveyPointPath))
+        {
+            recoveryOk = false;
+
+            Serial.println(
+                "StorageService: Warning - abandoned Survey "
+                "Point temporary file could not be removed");
+        }
+        else
+        {
+            Serial.println(
+                "StorageService: Abandoned Survey Point "
+                "temporary file removed");
+        }
+    }
+
+    return recoveryOk;
 }
 
 bool StorageService::ReadSiteSurveyPointRecord(
@@ -4120,6 +4542,9 @@ bool StorageService::ReadSiteSurveyPointRecord(
     uint32_t version = 0;
     uint32_t storedPointId = 0;
     uint32_t siteSurveyId = 0;
+    uint32_t floorPlanId = 0;
+    uint32_t mapX = 0;
+    uint32_t mapY = 0;
     uint32_t createdEpoch = 0;
     uint32_t storedChecksum = 0;
     uint32_t calculatedCrc = Crc32Initial;
@@ -4130,6 +4555,9 @@ bool StorageService::ReadSiteSurveyPointRecord(
     bool versionSeen = false;
     bool pointIdSeen = false;
     bool siteSurveyIdSeen = false;
+    bool floorPlanIdSeen = false;
+    bool mapXSeen = false;
+    bool mapYSeen = false;
     bool createdEpochSeen = false;
     bool nameSeen = false;
     bool checksumSeen = false;
@@ -4225,6 +4653,36 @@ bool StorageService::ReadSiteSurveyPointRecord(
 
             siteSurveyIdSeen = true;
         }
+        else if (key == "floor_plan_id")
+        {
+            if (floorPlanIdSeen ||
+                !ParseUnsigned(value, floorPlanId))
+            {
+                valid = false;
+            }
+
+            floorPlanIdSeen = true;
+        }
+        else if (key == "map_x")
+        {
+            if (mapXSeen ||
+                !ParseUnsigned(value, mapX))
+            {
+                valid = false;
+            }
+
+            mapXSeen = true;
+        }
+        else if (key == "map_y")
+        {
+            if (mapYSeen ||
+                !ParseUnsigned(value, mapY))
+            {
+                valid = false;
+            }
+
+            mapYSeen = true;
+        }
         else if (key == "created_epoch")
         {
             if (createdEpochSeen ||
@@ -4259,16 +4717,43 @@ bool StorageService::ReadSiteSurveyPointRecord(
     const uint32_t finalCrc =
         calculatedCrc ^ 0xFFFFFFFFUL;
 
-    if (!valid ||
-        !versionSeen ||
-        !pointIdSeen ||
-        !siteSurveyIdSeen ||
-        !createdEpochSeen ||
-        !nameSeen ||
-        !checksumSeen ||
-        version != CurrentSiteSurveyPointFormatVersion ||
+    const bool supportedVersion =
+        version == LegacySiteSurveyPointFormatVersion ||
+        version == CurrentSiteSurveyPointFormatVersion;
+
+    bool complete =
+        valid &&
+        versionSeen &&
+        pointIdSeen &&
+        siteSurveyIdSeen &&
+        createdEpochSeen &&
+        nameSeen &&
+        checksumSeen;
+
+    if (version == CurrentSiteSurveyPointFormatVersion)
+    {
+        complete =
+            complete &&
+            floorPlanIdSeen &&
+            mapXSeen &&
+            mapYSeen;
+    }
+    else
+    {
+        // Legacy v1 Survey Points predate Floor Plan mapping.
+        floorPlanId = 0;
+        mapX = 0;
+        mapY = 0;
+    }
+
+    if (!complete ||
+        !supportedVersion ||
         storedPointId != pointId ||
         siteSurveyId == 0 ||
+        mapX > StoredSiteSurveyPoint::MapCoordinateMaximum ||
+        mapY > StoredSiteSurveyPoint::MapCoordinateMaximum ||
+        (floorPlanId == 0 &&
+         (mapX != 0 || mapY != 0)) ||
         decodedName[0] == '\0' ||
         storedChecksum != finalCrc)
     {
@@ -4279,7 +4764,10 @@ bool StorageService::ReadSiteSurveyPointRecord(
     point.formatVersion = static_cast<uint8_t>(version);
     point.pointId = storedPointId;
     point.siteSurveyId = siteSurveyId;
+    point.floorPlanId = floorPlanId;
     point.createdEpoch = createdEpoch;
+    point.mapX = static_cast<uint16_t>(mapX);
+    point.mapY = static_cast<uint16_t>(mapY);
 
     std::strncpy(
         point.name,
@@ -6370,6 +6858,26 @@ void StorageService::BuildSiteSurveyPointPath(
         buffer,
         bufferSize,
         "%s/point_%06lu.txt",
+        SurveyPointsDirectory,
+        static_cast<unsigned long>(pointId));
+}
+
+
+void StorageService::BuildSiteSurveyPointBackupPath(
+    uint32_t pointId,
+    char *buffer,
+    size_t bufferSize)
+{
+    if (buffer == nullptr ||
+        bufferSize == 0)
+    {
+        return;
+    }
+
+    std::snprintf(
+        buffer,
+        bufferSize,
+        "%s/point_%06lu.bak",
         SurveyPointsDirectory,
         static_cast<unsigned long>(pointId));
 }
