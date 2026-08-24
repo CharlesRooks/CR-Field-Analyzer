@@ -104,6 +104,52 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 * Completed sessions retain their assigned Survey Point after the working label is cleared.
 * After a completed measurement, the Scan screen correctly returns to `Point: Set survey location` for the next survey point.
 
+
+### Milestone 10.24B — Floor Plan Import, Catalog & Safe USB Transfer
+
+#### Added
+- Added Floor Plan image import workflow for Site Surveys.
+- Added discovery of JPG, JPEG, PNG, and BMP Floor Plan images.
+- Added Floor Plan image dimension detection and validation.
+- Added persistent Floor Plan catalog filtered by parent Site Survey.
+- Added Floor Plan selection and registration from Measurement Setup.
+- Added `/sentinel/import/floorplans/` staging directory for incoming Floor Plan images.
+- Added automatic registration and storage of imported images under `/sentinel/floorplans/images/`.
+- Added safe read/write USB Transfer Mode for PC-to-SentinelOS file transfer.
+- Added USB Mass Storage write support using raw SD sector writes.
+- Added USB transfer read, write, and failed-write diagnostics.
+- Added USB Transfer controls to the Tools screen.
+- Added 800 × 480 Floor Plan hardware test image.
+
+#### Changed
+- USB Mass Storage is now read/write only while explicit USB Transfer Mode is active.
+- SentinelOS relinquishes filesystem ownership while the host controls the SD card.
+- SentinelOS storage operations remain blocked for the duration of USB Transfer Mode.
+- The device requires a restart after the host releases the writable SD card so the filesystem is remounted and all catalogs are rebuilt from clean state.
+- Floor Plan import directory enumeration was hardened so discovered files can be reopened and validated reliably.
+- Floor Plan images can be transferred without physically removing the microSD card.
+
+#### Hardened
+- SentinelOS and the USB host are prevented from simultaneously modifying the FAT filesystem.
+- Site Survey, Survey Point, measurement-session, and Floor Plan writes remain blocked while USB Transfer Mode owns the SD card.
+- Host write failures are counted and exposed through USB Transfer diagnostics.
+- Floor Plan records whose backing image is unavailable are rejected during catalog recovery.
+- Writable USB storage does not return filesystem control to SentinelOS until a clean restart.
+
+#### Verified
+- Firmware compiled successfully.
+- Writable USB Mass Storage mounted successfully in Windows.
+- Files could be copied from Windows to the SentinelOS SD card.
+- Transferred files retained their expected non-zero size.
+- Windows safe eject completed successfully.
+- SentinelOS retained exclusive-storage protection until restart.
+- Device restarted successfully after USB transfer.
+- Floor Plan import scanner detected the transferred test image.
+- Imported Floor Plan could be registered to an existing Site Survey.
+- Registered Floor Plan remained available after reboot.
+- Existing Site Surveys and Survey Points remained intact.
+- Physical microSD removal is no longer required for routine Floor Plan transfer.
+
 ### Milestone 10.24A — Floor Plan Persistent Storage Foundation
 
 #### Added

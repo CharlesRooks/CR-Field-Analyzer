@@ -4,6 +4,7 @@
 #include <FS.h>
 #include <SD.h>
 #include <cstdarg>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -27,6 +28,12 @@ namespace
 
     constexpr const char *FloorPlanImagesDirectory =
         "/sentinel/floorplans/images";
+
+    constexpr const char *ImportDirectory =
+        "/sentinel/import";
+
+    constexpr const char *FloorPlanImportDirectory =
+        "/sentinel/import/floorplans";
 
 
     constexpr const char *TemporarySessionPath =
@@ -337,6 +344,122 @@ namespace
 
         destination[writeIndex] = '\0';
         return true;
+    }
+
+    const char *FindFileExtension(
+        const char *path)
+    {
+        if (path == nullptr)
+        {
+            return nullptr;
+        }
+
+        const char *name = std::strrchr(path, '/');
+        name = name == nullptr ? path : name + 1;
+
+        const char *extension = std::strrchr(name, '.');
+
+        if (extension == nullptr ||
+            extension == name ||
+            extension[1] == '\0')
+        {
+            return nullptr;
+        }
+
+        return extension;
+    }
+
+    bool TextEqualsIgnoreCase(
+        const char *left,
+        const char *right)
+    {
+        if (left == nullptr || right == nullptr)
+        {
+            return false;
+        }
+
+        while (*left != '\0' && *right != '\0')
+        {
+            const unsigned char leftValue =
+                static_cast<unsigned char>(*left);
+            const unsigned char rightValue =
+                static_cast<unsigned char>(*right);
+
+            if (std::tolower(leftValue) !=
+                std::tolower(rightValue))
+            {
+                return false;
+            }
+
+            ++left;
+            ++right;
+        }
+
+        return *left == '\0' && *right == '\0';
+    }
+
+    int CompareTextIgnoreCase(
+        const char *left,
+        const char *right)
+    {
+        if (left == nullptr && right == nullptr)
+        {
+            return 0;
+        }
+
+        if (left == nullptr)
+        {
+            return -1;
+        }
+
+        if (right == nullptr)
+        {
+            return 1;
+        }
+
+        while (*left != '\0' && *right != '\0')
+        {
+            const int leftValue =
+                std::tolower(
+                    static_cast<unsigned char>(*left));
+            const int rightValue =
+                std::tolower(
+                    static_cast<unsigned char>(*right));
+
+            if (leftValue != rightValue)
+            {
+                return leftValue < rightValue ? -1 : 1;
+            }
+
+            ++left;
+            ++right;
+        }
+
+        if (*left == *right)
+        {
+            return 0;
+        }
+
+        return *left == '\0' ? -1 : 1;
+    }
+
+    bool PathIsInsideDirectory(
+        const char *path,
+        const char *directory)
+    {
+        if (path == nullptr || directory == nullptr)
+        {
+            return false;
+        }
+
+        const size_t directoryLength =
+            std::strlen(directory);
+
+        return std::strncmp(
+                   path,
+                   directory,
+                   directoryLength) == 0 &&
+               path[directoryLength] == '/';
     }
 
     const char *SecurityToStorageText(
@@ -675,6 +798,12 @@ StoredFloorPlanIndex
 
 uint8_t StorageService::savedFloorPlanCount = 0;
 
+FloorPlanImportImage
+    StorageService::floorPlanImportIndex[
+        StorageService::MaxFloorPlanImportImages] = {};
+
+uint8_t StorageService::floorPlanImportCount = 0;
+
 uint32_t StorageService::nextSiteSurveyPointId = 1;
 
 StoredSiteSurveyPointIndex
@@ -698,6 +827,7 @@ void StorageService::Begin()
     savedSiteSurveyCount = 0;
     nextFloorPlanId = 1;
     savedFloorPlanCount = 0;
+    floorPlanImportCount = 0;
     nextSiteSurveyPointId = 1;
     savedSiteSurveyPointCount = 0;
     loadedSession = emptyStoredSession;
@@ -725,6 +855,14 @@ void StorageService::Begin()
     {
         savedFloorPlanIndex[index] =
             StoredFloorPlanIndex{};
+    }
+
+    for (uint8_t index = 0;
+         index < MaxFloorPlanImportImages;
+         ++index)
+    {
+        floorPlanImportIndex[index] =
+            FloorPlanImportImage{};
     }
 
     for (uint16_t index = 0;
@@ -786,6 +924,7 @@ void StorageService::Begin()
     LoadMeasurementSessions();
     LoadSiteSurveySequence();
     LoadFloorPlanSequence();
+    RefreshFloorPlanImportCatalog();
     LoadSiteSurveyPointSequence();
 
     Serial.println(
@@ -817,7 +956,7 @@ void StorageService::SetExternalReadOnlyAccessActive(
     externalReadOnlyAccessActive = active;
 
     Serial.printf(
-        "StorageService: External read-only access %s\n",
+        "StorageService: External host storage access %s\n",
         active ? "ACTIVE" : "released");
 }
 
@@ -1337,6 +1476,400 @@ bool StorageService::CreateFloorPlanRecord(
     return true;
 }
 
+uint8_t StorageService::RefreshFloorPlanImportCatalog()
+{
+    floorPlanImportCount = 0;
+
+    for (uint8_t index = 0;
+         index < MaxFloorPlanImportImages;
+         ++index)
+    {
+        floorPlanImportIndex[index] =
+            FloorPlanImportImage{};
+    }
+
+    if (!available)
+    {
+        return 0;
+    }
+
+    if (externalReadOnlyAccessActive)
+    {
+        Serial.println(
+            "StorageService: Floor Plan import scan blocked "
+            "while USB Storage Mode is active");
+
+        return 0;
+    }
+
+    if (!EnsureDirectories())
+    {
+        return 0;
+    }
+
+    File directory =
+        SD.open(FloorPlanImportDirectory);
+
+    if (!directory || !directory.isDirectory())
+    {
+        Serial.println(
+            "StorageService: Floor Plan import directory "
+            "unavailable");
+
+        if (directory)
+        {
+            directory.close();
+        }
+
+        return 0;
+    }
+
+    File entry = directory.openNextFile();
+
+    while (entry)
+    {
+        char path[
+            FloorPlanImportImage::PathCapacity] = {};
+
+        bool pathBuilt = false;
+        bool supportedImage = false;
+
+        if (!entry.isDirectory())
+        {
+            const char *entryPath = entry.name();
+
+            if (entryPath != nullptr &&
+                entryPath[0] != '\0')
+            {
+                int written = 0;
+
+                if (PathIsInsideDirectory(
+                        entryPath,
+                        FloorPlanImportDirectory))
+                {
+                    written = std::snprintf(
+                        path,
+                        sizeof(path),
+                        "%s",
+                        entryPath);
+                }
+                else
+                {
+                    const char *fileName =
+                        std::strrchr(entryPath, '/');
+
+                    fileName =
+                        fileName == nullptr
+                            ? entryPath
+                            : fileName + 1;
+
+                    written = std::snprintf(
+                        path,
+                        sizeof(path),
+                        "%s/%s",
+                        FloorPlanImportDirectory,
+                        fileName);
+                }
+
+                pathBuilt =
+                    written > 0 &&
+                    static_cast<size_t>(written) <
+                        sizeof(path);
+
+                supportedImage =
+                    pathBuilt &&
+                    IsSupportedFloorPlanImage(path);
+            }
+        }
+
+        // ESP32 SD directory iteration can be unreliable when another
+        // file operation is started while the current directory entry
+        // remains open. Capture the path first, then close the entry
+        // before validating or reopening the image.
+        entry.close();
+
+        if (pathBuilt && supportedImage)
+        {
+            File imageFile =
+                SD.open(path, FILE_READ);
+
+            if (!imageFile || imageFile.isDirectory())
+            {
+                if (imageFile)
+                {
+                    imageFile.close();
+                }
+
+                Serial.printf(
+                    "StorageService: Floor Plan import entry "
+                    "could not be opened: %s\n",
+                    path);
+            }
+            else
+            {
+                imageFile.close();
+
+                FloorPlanImportImage candidate{};
+
+                candidate.available = true;
+
+                std::strncpy(
+                    candidate.path,
+                    path,
+                    sizeof(candidate.path) - 1);
+
+                candidate.path[
+                    sizeof(candidate.path) - 1] = '\0';
+
+                BuildImportedFloorPlanName(
+                    candidate.path,
+                    candidate.name,
+                    sizeof(candidate.name));
+
+                ReadFloorPlanImageDimensions(
+                    candidate.path,
+                    candidate.sourceWidth,
+                    candidate.sourceHeight);
+
+                uint8_t insertIndex = 0;
+
+                while (
+                    insertIndex < floorPlanImportCount &&
+                    CompareTextIgnoreCase(
+                        floorPlanImportIndex[insertIndex].name,
+                        candidate.name) <= 0)
+                {
+                    ++insertIndex;
+                }
+
+                if (insertIndex < MaxFloorPlanImportImages)
+                {
+                    const uint8_t moveEnd =
+                        floorPlanImportCount <
+                                MaxFloorPlanImportImages
+                            ? floorPlanImportCount
+                            : MaxFloorPlanImportImages - 1;
+
+                    for (uint8_t moveIndex = moveEnd;
+                         moveIndex > insertIndex;
+                         --moveIndex)
+                    {
+                        floorPlanImportIndex[moveIndex] =
+                            floorPlanImportIndex[
+                                moveIndex - 1];
+                    }
+
+                    floorPlanImportIndex[insertIndex] =
+                        candidate;
+
+                    if (floorPlanImportCount <
+                        MaxFloorPlanImportImages)
+                    {
+                        ++floorPlanImportCount;
+                    }
+
+                    Serial.printf(
+                        "StorageService: Floor Plan import image "
+                        "found: %s\n",
+                        candidate.path);
+                }
+            }
+        }
+        else if (pathBuilt)
+        {
+            Serial.printf(
+                "StorageService: Ignoring unsupported Floor Plan "
+                "import file: %s\n",
+                path);
+        }
+
+        entry = directory.openNextFile();
+    }
+
+    directory.close();
+
+    Serial.printf(
+        "StorageService: Found %u Floor Plan import image%s\n",
+        floorPlanImportCount,
+        floorPlanImportCount == 1 ? "" : "s");
+
+    return floorPlanImportCount;
+}
+
+uint8_t StorageService::GetFloorPlanImportCount()
+{
+    return floorPlanImportCount;
+}
+
+const FloorPlanImportImage *
+StorageService::GetFloorPlanImportImage(
+    uint8_t index)
+{
+    if (index >= floorPlanImportCount)
+    {
+        return nullptr;
+    }
+
+    return &floorPlanImportIndex[index];
+}
+
+bool StorageService::RegisterImportedFloorPlan(
+    uint32_t siteSurveyId,
+    const char *importPath,
+    uint32_t createdEpoch,
+    uint32_t &floorPlanId)
+{
+    floorPlanId = 0;
+
+    if (externalReadOnlyAccessActive)
+    {
+        Serial.println(
+            "StorageService: Floor Plan import blocked "
+            "while USB Storage Mode is active");
+
+        return false;
+    }
+
+    if (!available ||
+        siteSurveyId == 0 ||
+        importPath == nullptr ||
+        importPath[0] == '\0' ||
+        !PathIsInsideDirectory(
+            importPath,
+            FloorPlanImportDirectory) ||
+        !IsSupportedFloorPlanImage(importPath))
+    {
+        return false;
+    }
+
+    if (!EnsureDirectories())
+    {
+        return false;
+    }
+
+    File source = SD.open(importPath, FILE_READ);
+
+    if (!source || source.isDirectory())
+    {
+        if (source)
+        {
+            source.close();
+        }
+
+        Serial.printf(
+            "StorageService: Floor Plan import source "
+            "unavailable: %s\n",
+            importPath);
+
+        return false;
+    }
+
+    source.close();
+
+    StoredSiteSurvey parentSurvey{};
+
+    if (!ReadSiteSurveyRecord(
+            siteSurveyId,
+            parentSurvey))
+    {
+        Serial.printf(
+            "StorageService: Floor Plan import failed - "
+            "parent Site Survey %lu is invalid\n",
+            static_cast<unsigned long>(siteSurveyId));
+
+        return false;
+    }
+
+    char name[StoredFloorPlan::NameCapacity] = {};
+
+    BuildImportedFloorPlanName(
+        importPath,
+        name,
+        sizeof(name));
+
+    if (name[0] == '\0')
+    {
+        std::snprintf(
+            name,
+            sizeof(name),
+            "Floor Plan %lu",
+            static_cast<unsigned long>(
+                nextFloorPlanId));
+    }
+
+    uint16_t sourceWidth = 0;
+    uint16_t sourceHeight = 0;
+
+    ReadFloorPlanImageDimensions(
+        importPath,
+        sourceWidth,
+        sourceHeight);
+
+    char registeredPath[
+        StoredFloorPlan::ImagePathCapacity] = {};
+
+    if (!BuildRegisteredFloorPlanImagePath(
+            nextFloorPlanId,
+            importPath,
+            registeredPath,
+            sizeof(registeredPath)))
+    {
+        Serial.println(
+            "StorageService: Could not allocate a registered "
+            "Floor Plan image path");
+
+        return false;
+    }
+
+    if (!SD.rename(
+            importPath,
+            registeredPath))
+    {
+        Serial.printf(
+            "StorageService: Could not move Floor Plan image "
+            "%s -> %s\n",
+            importPath,
+            registeredPath);
+
+        return false;
+    }
+
+    uint32_t createdFloorPlanId = 0;
+
+    if (!CreateFloorPlanRecord(
+            siteSurveyId,
+            name,
+            registeredPath,
+            sourceWidth,
+            sourceHeight,
+            createdEpoch,
+            createdFloorPlanId))
+    {
+        if (!SD.rename(
+                registeredPath,
+                importPath))
+        {
+            Serial.printf(
+                "StorageService: Warning - Floor Plan metadata "
+                "failed and image rollback also failed: %s\n",
+                registeredPath);
+        }
+
+        return false;
+    }
+
+    floorPlanId = createdFloorPlanId;
+
+    filesystemUsedBytes = SD.usedBytes();
+
+    Serial.printf(
+        "StorageService: Imported Floor Plan %lu from %s\n",
+        static_cast<unsigned long>(floorPlanId),
+        importPath);
+
+    return true;
+}
+
 bool StorageService::CreateSiteSurveyPointRecord(
     uint32_t siteSurveyId,
     const char *name,
@@ -1666,6 +2199,18 @@ bool StorageService::EnsureDirectories()
 
     if (!SD.exists(FloorPlanImagesDirectory) &&
         !SD.mkdir(FloorPlanImagesDirectory))
+    {
+        return false;
+    }
+
+    if (!SD.exists(ImportDirectory) &&
+        !SD.mkdir(ImportDirectory))
+    {
+        return false;
+    }
+
+    if (!SD.exists(FloorPlanImportDirectory) &&
+        !SD.mkdir(FloorPlanImportDirectory))
     {
         return false;
     }
@@ -2522,6 +3067,17 @@ void StorageService::LoadFloorPlanSequence()
                     "skipped - record invalid\n",
                     static_cast<unsigned long>(
                         candidateFloorPlanId));
+            }
+            else if (!IsSupportedFloorPlanImage(
+                         floorPlan.imagePath) ||
+                     !SD.exists(floorPlan.imagePath))
+            {
+                Serial.printf(
+                    "StorageService: Floor Plan %lu "
+                    "skipped - image unavailable: %s\n",
+                    static_cast<unsigned long>(
+                        floorPlan.floorPlanId),
+                    floorPlan.imagePath);
             }
             else
             {
@@ -5383,6 +5939,420 @@ void StorageService::BuildFloorPlanPath(
         "%s/floor_%06lu.txt",
         FloorPlansDirectory,
         static_cast<unsigned long>(floorPlanId));
+}
+
+bool StorageService::IsSupportedFloorPlanImage(
+    const char *path)
+{
+    const char *extension =
+        FindFileExtension(path);
+
+    return extension != nullptr &&
+           (TextEqualsIgnoreCase(extension, ".png") ||
+            TextEqualsIgnoreCase(extension, ".jpg") ||
+            TextEqualsIgnoreCase(extension, ".jpeg") ||
+            TextEqualsIgnoreCase(extension, ".bmp"));
+}
+
+bool StorageService::ReadFloorPlanImageDimensions(
+    const char *path,
+    uint16_t &width,
+    uint16_t &height)
+{
+    width = 0;
+    height = 0;
+
+    if (path == nullptr ||
+        !IsSupportedFloorPlanImage(path))
+    {
+        return false;
+    }
+
+    File file = SD.open(path, FILE_READ);
+
+    if (!file || file.isDirectory())
+    {
+        if (file)
+        {
+            file.close();
+        }
+
+        return false;
+    }
+
+    const char *extension =
+        FindFileExtension(path);
+
+    bool parsed = false;
+
+    if (extension != nullptr &&
+        TextEqualsIgnoreCase(extension, ".png"))
+    {
+        uint8_t header[24] = {};
+
+        if (file.read(
+                header,
+                sizeof(header)) == sizeof(header))
+        {
+            static constexpr uint8_t PngSignature[8] =
+            {
+                0x89, 0x50, 0x4E, 0x47,
+                0x0D, 0x0A, 0x1A, 0x0A
+            };
+
+            if (std::memcmp(
+                    header,
+                    PngSignature,
+                    sizeof(PngSignature)) == 0 &&
+                header[12] == 'I' &&
+                header[13] == 'H' &&
+                header[14] == 'D' &&
+                header[15] == 'R')
+            {
+                const uint32_t parsedWidth =
+                    (static_cast<uint32_t>(header[16]) << 24) |
+                    (static_cast<uint32_t>(header[17]) << 16) |
+                    (static_cast<uint32_t>(header[18]) << 8) |
+                    static_cast<uint32_t>(header[19]);
+
+                const uint32_t parsedHeight =
+                    (static_cast<uint32_t>(header[20]) << 24) |
+                    (static_cast<uint32_t>(header[21]) << 16) |
+                    (static_cast<uint32_t>(header[22]) << 8) |
+                    static_cast<uint32_t>(header[23]);
+
+                if (parsedWidth > 0 &&
+                    parsedWidth <= 0xFFFF &&
+                    parsedHeight > 0 &&
+                    parsedHeight <= 0xFFFF)
+                {
+                    width =
+                        static_cast<uint16_t>(parsedWidth);
+                    height =
+                        static_cast<uint16_t>(parsedHeight);
+                    parsed = true;
+                }
+            }
+        }
+    }
+    else if (extension != nullptr &&
+             TextEqualsIgnoreCase(extension, ".bmp"))
+    {
+        uint8_t header[26] = {};
+
+        if (file.read(
+                header,
+                sizeof(header)) == sizeof(header) &&
+            header[0] == 'B' &&
+            header[1] == 'M')
+        {
+            const uint32_t rawWidth =
+                static_cast<uint32_t>(header[18]) |
+                (static_cast<uint32_t>(header[19]) << 8) |
+                (static_cast<uint32_t>(header[20]) << 16) |
+                (static_cast<uint32_t>(header[21]) << 24);
+
+            const uint32_t rawHeight =
+                static_cast<uint32_t>(header[22]) |
+                (static_cast<uint32_t>(header[23]) << 8) |
+                (static_cast<uint32_t>(header[24]) << 16) |
+                (static_cast<uint32_t>(header[25]) << 24);
+
+            const int32_t signedWidth =
+                static_cast<int32_t>(rawWidth);
+            const int32_t signedHeight =
+                static_cast<int32_t>(rawHeight);
+
+            const uint32_t parsedHeight =
+                signedHeight < 0
+                    ? static_cast<uint32_t>(
+                          -static_cast<int64_t>(signedHeight))
+                    : static_cast<uint32_t>(signedHeight);
+
+            if (signedWidth > 0 &&
+                signedWidth <= 0xFFFF &&
+                parsedHeight > 0 &&
+                parsedHeight <= 0xFFFF)
+            {
+                width =
+                    static_cast<uint16_t>(signedWidth);
+                height =
+                    static_cast<uint16_t>(parsedHeight);
+                parsed = true;
+            }
+        }
+    }
+    else
+    {
+        uint8_t signature[2] = {};
+
+        if (file.read(
+                signature,
+                sizeof(signature)) == sizeof(signature) &&
+            signature[0] == 0xFF &&
+            signature[1] == 0xD8)
+        {
+            while (file.available())
+            {
+                int prefix = file.read();
+
+                if (prefix != 0xFF)
+                {
+                    continue;
+                }
+
+                int marker = file.read();
+
+                while (marker == 0xFF)
+                {
+                    marker = file.read();
+                }
+
+                if (marker < 0 ||
+                    marker == 0xD9 ||
+                    marker == 0xDA)
+                {
+                    break;
+                }
+
+                if (marker == 0x01 ||
+                    (marker >= 0xD0 && marker <= 0xD7))
+                {
+                    continue;
+                }
+
+                const int lengthHigh = file.read();
+                const int lengthLow = file.read();
+
+                if (lengthHigh < 0 || lengthLow < 0)
+                {
+                    break;
+                }
+
+                const uint16_t segmentLength =
+                    static_cast<uint16_t>(
+                        (lengthHigh << 8) | lengthLow);
+
+                if (segmentLength < 2)
+                {
+                    break;
+                }
+
+                const bool isStartOfFrame =
+                    marker == 0xC0 || marker == 0xC1 ||
+                    marker == 0xC2 || marker == 0xC3 ||
+                    marker == 0xC5 || marker == 0xC6 ||
+                    marker == 0xC7 || marker == 0xC9 ||
+                    marker == 0xCA || marker == 0xCB ||
+                    marker == 0xCD || marker == 0xCE ||
+                    marker == 0xCF;
+
+                if (isStartOfFrame &&
+                    segmentLength >= 7)
+                {
+                    const int precision = file.read();
+                    const int heightHigh = file.read();
+                    const int heightLow = file.read();
+                    const int widthHigh = file.read();
+                    const int widthLow = file.read();
+
+                    if (precision < 0 ||
+                        heightHigh < 0 || heightLow < 0 ||
+                        widthHigh < 0 || widthLow < 0)
+                    {
+                        break;
+                    }
+
+                    const uint16_t parsedHeight =
+                        static_cast<uint16_t>(
+                            (heightHigh << 8) | heightLow);
+
+                    const uint16_t parsedWidth =
+                        static_cast<uint16_t>(
+                            (widthHigh << 8) | widthLow);
+
+                    if (parsedWidth > 0 &&
+                        parsedHeight > 0)
+                    {
+                        width = parsedWidth;
+                        height = parsedHeight;
+                        parsed = true;
+                    }
+
+                    break;
+                }
+
+                const uint32_t nextPosition =
+                    static_cast<uint32_t>(file.position()) +
+                    static_cast<uint32_t>(segmentLength - 2);
+
+                if (nextPosition > file.size() ||
+                    !file.seek(nextPosition))
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    file.close();
+    return parsed;
+}
+
+void StorageService::BuildImportedFloorPlanName(
+    const char *path,
+    char *buffer,
+    size_t bufferSize)
+{
+    if (buffer == nullptr || bufferSize == 0)
+    {
+        return;
+    }
+
+    buffer[0] = '\0';
+
+    if (path == nullptr)
+    {
+        return;
+    }
+
+    const char *name = std::strrchr(path, '/');
+    name = name == nullptr ? path : name + 1;
+
+    const char *extension =
+        FindFileExtension(name);
+
+    const size_t sourceLength =
+        extension != nullptr
+            ? static_cast<size_t>(extension - name)
+            : std::strlen(name);
+
+    size_t writeIndex = 0;
+
+    for (size_t index = 0;
+         index < sourceLength &&
+         writeIndex + 1 < bufferSize;
+         ++index)
+    {
+        char value = name[index];
+
+        if (value == '_')
+        {
+            value = ' ';
+        }
+
+        if (writeIndex == 0 &&
+            std::isspace(
+                static_cast<unsigned char>(value)))
+        {
+            continue;
+        }
+
+        buffer[writeIndex++] = value;
+    }
+
+    while (writeIndex > 0 &&
+           std::isspace(
+               static_cast<unsigned char>(
+                   buffer[writeIndex - 1])))
+    {
+        --writeIndex;
+    }
+
+    buffer[writeIndex] = '\0';
+}
+
+bool StorageService::BuildRegisteredFloorPlanImagePath(
+    uint32_t floorPlanId,
+    const char *sourcePath,
+    char *buffer,
+    size_t bufferSize)
+{
+    if (floorPlanId == 0 ||
+        sourcePath == nullptr ||
+        buffer == nullptr ||
+        bufferSize == 0)
+    {
+        return false;
+    }
+
+    const char *sourceExtension =
+        FindFileExtension(sourcePath);
+
+    const char *extension = nullptr;
+
+    if (sourceExtension != nullptr &&
+        (TextEqualsIgnoreCase(
+             sourceExtension,
+             ".jpg") ||
+         TextEqualsIgnoreCase(
+             sourceExtension,
+             ".jpeg")))
+    {
+        extension = ".jpg";
+    }
+    else if (sourceExtension != nullptr &&
+             TextEqualsIgnoreCase(
+                 sourceExtension,
+                 ".png"))
+    {
+        extension = ".png";
+    }
+    else if (sourceExtension != nullptr &&
+             TextEqualsIgnoreCase(
+                 sourceExtension,
+                 ".bmp"))
+    {
+        extension = ".bmp";
+    }
+    else
+    {
+        return false;
+    }
+
+    for (uint8_t suffix = 0;
+         suffix < 100;
+         ++suffix)
+    {
+        int written = 0;
+
+        if (suffix == 0)
+        {
+            written = std::snprintf(
+                buffer,
+                bufferSize,
+                "%s/floor_%06lu%s",
+                FloorPlanImagesDirectory,
+                static_cast<unsigned long>(floorPlanId),
+                extension);
+        }
+        else
+        {
+            written = std::snprintf(
+                buffer,
+                bufferSize,
+                "%s/floor_%06lu_%02u%s",
+                FloorPlanImagesDirectory,
+                static_cast<unsigned long>(floorPlanId),
+                suffix,
+                extension);
+        }
+
+        if (written <= 0 ||
+            static_cast<size_t>(written) >= bufferSize)
+        {
+            buffer[0] = '\0';
+            return false;
+        }
+
+        if (!SD.exists(buffer))
+        {
+            return true;
+        }
+    }
+
+    buffer[0] = '\0';
+    return false;
 }
 
 void StorageService::BuildSiteSurveyPointPath(

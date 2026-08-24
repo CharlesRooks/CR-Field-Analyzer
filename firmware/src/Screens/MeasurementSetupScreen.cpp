@@ -128,18 +128,49 @@ void MeasurementSetupScreen::Show(
             survey.name);
     }
 
+    lv_obj_t *surveyActionRow =
+        lv_obj_create(root);
+
+    lv_obj_remove_style_all(
+        surveyActionRow);
+
+    lv_obj_set_width(
+        surveyActionRow,
+        lv_pct(100));
+
+    lv_obj_set_height(
+        surveyActionRow,
+        32);
+
+    lv_obj_set_flex_flow(
+        surveyActionRow,
+        LV_FLEX_FLOW_ROW);
+
+    lv_obj_set_style_pad_column(
+        surveyActionRow,
+        6,
+        0);
+
+    lv_obj_clear_flag(
+        surveyActionRow,
+        LV_OBJ_FLAG_SCROLLABLE);
+
     if (StorageService::GetSavedSiteSurveyCount() > 0)
     {
         selectSavedSurveyButton =
-            lv_btn_create(root);
+            lv_btn_create(surveyActionRow);
 
         lv_obj_set_width(
             selectSavedSurveyButton,
-            lv_pct(100));
+            0);
 
         lv_obj_set_height(
             selectSavedSurveyButton,
             32);
+
+        lv_obj_set_flex_grow(
+            selectSavedSurveyButton,
+            1);
 
         lv_obj_t *selectSavedSurveyLabel =
             lv_label_create(
@@ -147,7 +178,7 @@ void MeasurementSetupScreen::Show(
 
         lv_label_set_text(
             selectSavedSurveyLabel,
-            "Select Saved Survey");
+            "Saved Survey");
 
         lv_obj_center(
             selectSavedSurveyLabel);
@@ -159,6 +190,39 @@ void MeasurementSetupScreen::Show(
             LV_EVENT_CLICKED,
             nullptr);
     }
+
+    floorPlansButton =
+        lv_btn_create(surveyActionRow);
+
+    lv_obj_set_width(
+        floorPlansButton,
+        0);
+
+    lv_obj_set_height(
+        floorPlansButton,
+        32);
+
+    lv_obj_set_flex_grow(
+        floorPlansButton,
+        1);
+
+    lv_obj_t *floorPlansLabel =
+        lv_label_create(floorPlansButton);
+
+    lv_label_set_text(
+        floorPlansLabel,
+        "Floor Plans");
+
+    lv_obj_center(
+        floorPlansLabel);
+
+    lv_obj_add_event_cb(
+        floorPlansButton,
+        MeasurementSetupScreen::HandleFloorPlansButton,
+        LV_EVENT_CLICKED,
+        nullptr);
+
+    RefreshFloorPlanButtonState();
 
     // ------------------------------------------------------------
     // Survey Point
@@ -459,6 +523,7 @@ HandleSavedSurveyButton(
         survey->createdEpoch;
 
     instance->RefreshSavedPointButtonState();
+    instance->RefreshFloorPlanButtonState();
 
     Serial.printf(
         "MeasurementSetupScreen: Saved Site Survey "
@@ -483,6 +548,144 @@ HandleSurveySelectorCancel(
     }
 
     instance->CloseSurveySelector();
+}
+
+void MeasurementSetupScreen::
+HandleFloorPlansButton(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr ||
+        lv_event_get_code(event) != LV_EVENT_CLICKED)
+    {
+        return;
+    }
+
+    instance->OpenFloorPlanSelector();
+}
+
+void MeasurementSetupScreen::
+HandleFloorPlanImportButton(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr ||
+        lv_event_get_code(event) != LV_EVENT_CLICKED)
+    {
+        return;
+    }
+
+    const uintptr_t rawIndex =
+        reinterpret_cast<uintptr_t>(
+            lv_event_get_user_data(event));
+
+    if (rawIndex > 0xFF)
+    {
+        return;
+    }
+
+    const uint8_t index =
+        static_cast<uint8_t>(rawIndex);
+
+    const FloorPlanImportImage *image =
+        StorageService::GetFloorPlanImportImage(index);
+
+    if (image == nullptr ||
+        !image->available)
+    {
+        return;
+    }
+
+    const uint32_t surveyId =
+        instance->GetPointContextSurveyId();
+
+    if (surveyId == 0)
+    {
+        return;
+    }
+
+    char importPath[
+        FloorPlanImportImage::PathCapacity] = {};
+
+    char displayName[
+        FloorPlanImportImage::NameCapacity] = {};
+
+    std::strncpy(
+        importPath,
+        image->path,
+        sizeof(importPath) - 1);
+
+    std::strncpy(
+        displayName,
+        image->name,
+        sizeof(displayName) - 1);
+
+    uint32_t createdEpoch = 0;
+    TimeService::GetEpochTime(createdEpoch);
+
+    uint32_t floorPlanId = 0;
+
+    if (!SiteSurveyManager::RegisterFloorPlanImport(
+            surveyId,
+            importPath,
+            createdEpoch,
+            floorPlanId))
+    {
+        Serial.printf(
+            "MeasurementSetupScreen: Floor Plan import "
+            "failed: %s\n",
+            displayName);
+
+        return;
+    }
+
+    Serial.printf(
+        "MeasurementSetupScreen: Floor Plan %lu "
+        "imported for Site Survey %lu: %s\n",
+        static_cast<unsigned long>(floorPlanId),
+        static_cast<unsigned long>(surveyId),
+        displayName);
+
+    lv_obj_t *button =
+        lv_event_get_target(event);
+
+    if (button != nullptr)
+    {
+        lv_obj_add_state(
+            button,
+            LV_STATE_DISABLED);
+
+        lv_obj_t *label =
+            lv_obj_get_child(button, 0);
+
+        if (label != nullptr)
+        {
+            char text[80] = {};
+
+            std::snprintf(
+                text,
+                sizeof(text),
+                "Imported #%lu  %s",
+                static_cast<unsigned long>(floorPlanId),
+                displayName);
+
+            lv_label_set_text(label, text);
+        }
+    }
+}
+
+void MeasurementSetupScreen::
+HandleFloorPlanSelectorClose(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr ||
+        lv_event_get_code(event) != LV_EVENT_CLICKED)
+    {
+        return;
+    }
+
+    instance->CloseFloorPlanSelector();
 }
 
 void MeasurementSetupScreen::
@@ -783,6 +986,7 @@ void MeasurementSetupScreen::HandleTextAreaFocus(
         instance->selectedSavedSurveyCreatedEpoch = 0;
         instance->ClearSavedPointSelection(false);
         instance->RefreshSavedPointButtonState();
+        instance->RefreshFloorPlanButtonState();
     }
     else if (target ==
              instance->surveyPointTextArea)
@@ -1013,6 +1217,418 @@ void MeasurementSetupScreen::CloseSurveySelector()
         surveySelectorRoot);
 
     surveySelectorRoot = nullptr;
+}
+
+void MeasurementSetupScreen::OpenFloorPlanSelector()
+{
+    if (floorPlanSelectorRoot != nullptr)
+    {
+        return;
+    }
+
+    const uint32_t surveyId =
+        GetPointContextSurveyId();
+
+    if (surveyId == 0 ||
+        !StorageService::IsAvailable() ||
+        StorageService::IsExternalReadOnlyAccessActive())
+    {
+        return;
+    }
+
+    StorageService::RefreshFloorPlanImportCatalog();
+
+    lv_obj_t *parent = lv_layer_top();
+
+    if (parent == nullptr)
+    {
+        return;
+    }
+
+    floorPlanSelectorRoot =
+        lv_obj_create(parent);
+
+    lv_obj_set_pos(
+        floorPlanSelectorRoot,
+        0,
+        0);
+
+    lv_obj_set_size(
+        floorPlanSelectorRoot,
+        lv_pct(100),
+        lv_pct(100));
+
+    lv_obj_set_style_pad_all(
+        floorPlanSelectorRoot,
+        6,
+        0);
+
+    lv_obj_set_style_pad_row(
+        floorPlanSelectorRoot,
+        4,
+        0);
+
+    lv_obj_set_flex_flow(
+        floorPlanSelectorRoot,
+        LV_FLEX_FLOW_COLUMN);
+
+    lv_obj_clear_flag(
+        floorPlanSelectorRoot,
+        LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *title =
+        lv_label_create(floorPlanSelectorRoot);
+
+    lv_label_set_text(
+        title,
+        "FLOOR PLANS");
+
+    lv_obj_t *surveyLabel =
+        lv_label_create(floorPlanSelectorRoot);
+
+    lv_obj_set_width(
+        surveyLabel,
+        lv_pct(100));
+
+    lv_label_set_long_mode(
+        surveyLabel,
+        LV_LABEL_LONG_DOT);
+
+    const char *surveyName =
+        siteSurveyTextArea != nullptr
+            ? lv_textarea_get_text(siteSurveyTextArea)
+            : nullptr;
+
+    char surveyText[96] = {};
+
+    std::snprintf(
+        surveyText,
+        sizeof(surveyText),
+        "Survey #%lu  %s",
+        static_cast<unsigned long>(surveyId),
+        surveyName != nullptr ? surveyName : "");
+
+    lv_label_set_text(
+        surveyLabel,
+        surveyText);
+
+    lv_obj_t *list =
+        lv_obj_create(floorPlanSelectorRoot);
+
+    lv_obj_set_width(
+        list,
+        lv_pct(100));
+
+    lv_obj_set_height(
+        list,
+        0);
+
+    lv_obj_set_flex_grow(
+        list,
+        1);
+
+    lv_obj_add_flag(
+        list,
+        LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_set_scroll_dir(
+        list,
+        LV_DIR_VER);
+
+    lv_obj_set_scrollbar_mode(
+        list,
+        LV_SCROLLBAR_MODE_AUTO);
+
+    lv_obj_set_style_pad_all(
+        list,
+        4,
+        0);
+
+    lv_obj_set_style_pad_row(
+        list,
+        4,
+        0);
+
+    lv_obj_set_flex_flow(
+        list,
+        LV_FLEX_FLOW_COLUMN);
+
+    lv_obj_t *registeredHeader =
+        lv_label_create(list);
+
+    lv_label_set_text(
+        registeredHeader,
+        "REGISTERED");
+
+    bool hasRegisteredFloorPlan = false;
+
+    const uint8_t savedCount =
+        StorageService::GetSavedFloorPlanCount();
+
+    for (uint8_t index = 0;
+         index < savedCount;
+         ++index)
+    {
+        const StoredFloorPlanIndex *floorPlan =
+            StorageService::GetSavedFloorPlanIndex(index);
+
+        if (floorPlan == nullptr ||
+            !floorPlan->available ||
+            floorPlan->siteSurveyId != surveyId)
+        {
+            continue;
+        }
+
+        hasRegisteredFloorPlan = true;
+
+        lv_obj_t *row =
+            lv_obj_create(list);
+
+        lv_obj_set_width(
+            row,
+            lv_pct(100));
+
+        lv_obj_set_height(
+            row,
+            38);
+
+        lv_obj_set_style_pad_all(
+            row,
+            6,
+            0);
+
+        lv_obj_clear_flag(
+            row,
+            LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *label =
+            lv_label_create(row);
+
+        lv_obj_set_width(
+            label,
+            lv_pct(100));
+
+        lv_label_set_long_mode(
+            label,
+            LV_LABEL_LONG_DOT);
+
+        char text[96] = {};
+
+        if (floorPlan->sourceWidth != 0 &&
+            floorPlan->sourceHeight != 0)
+        {
+            std::snprintf(
+                text,
+                sizeof(text),
+                "#%lu  %s  %ux%u",
+                static_cast<unsigned long>(
+                    floorPlan->floorPlanId),
+                floorPlan->name,
+                static_cast<unsigned int>(
+                    floorPlan->sourceWidth),
+                static_cast<unsigned int>(
+                    floorPlan->sourceHeight));
+        }
+        else
+        {
+            std::snprintf(
+                text,
+                sizeof(text),
+                "#%lu  %s",
+                static_cast<unsigned long>(
+                    floorPlan->floorPlanId),
+                floorPlan->name);
+        }
+
+        lv_label_set_text(label, text);
+        lv_obj_center(label);
+    }
+
+    if (!hasRegisteredFloorPlan)
+    {
+        lv_obj_t *emptyLabel =
+            lv_label_create(list);
+
+        lv_label_set_text(
+            emptyLabel,
+            "No registered Floor Plans");
+    }
+
+    lv_obj_t *importHeader =
+        lv_label_create(list);
+
+    lv_label_set_text(
+        importHeader,
+        "IMPORT IMAGES");
+
+    const uint8_t importCount =
+        StorageService::GetFloorPlanImportCount();
+
+    if (importCount == 0)
+    {
+        lv_obj_t *emptyImportLabel =
+            lv_label_create(list);
+
+        lv_obj_set_width(
+            emptyImportLabel,
+            lv_pct(100));
+
+        lv_label_set_long_mode(
+            emptyImportLabel,
+            LV_LABEL_LONG_WRAP);
+
+        lv_label_set_text(
+            emptyImportLabel,
+            "No JPG, PNG, or BMP images found. "
+            "Copy files to /sentinel/import/floorplans "
+            "on the SD card. USB Storage is read-only.");
+    }
+    else
+    {
+        for (uint8_t index = 0;
+             index < importCount;
+             ++index)
+        {
+            const FloorPlanImportImage *image =
+                StorageService::GetFloorPlanImportImage(index);
+
+            if (image == nullptr ||
+                !image->available)
+            {
+                continue;
+            }
+
+            lv_obj_t *button =
+                lv_btn_create(list);
+
+            lv_obj_set_width(
+                button,
+                lv_pct(100));
+
+            lv_obj_set_height(
+                button,
+                40);
+
+            lv_obj_add_event_cb(
+                button,
+                MeasurementSetupScreen::
+                    HandleFloorPlanImportButton,
+                LV_EVENT_CLICKED,
+                reinterpret_cast<void *>(
+                    static_cast<uintptr_t>(index)));
+
+            lv_obj_t *label =
+                lv_label_create(button);
+
+            lv_obj_set_width(
+                label,
+                lv_pct(100));
+
+            lv_label_set_long_mode(
+                label,
+                LV_LABEL_LONG_DOT);
+
+            char text[96] = {};
+
+            if (image->sourceWidth != 0 &&
+                image->sourceHeight != 0)
+            {
+                std::snprintf(
+                    text,
+                    sizeof(text),
+                    "+ %s  %ux%u",
+                    image->name,
+                    static_cast<unsigned int>(
+                        image->sourceWidth),
+                    static_cast<unsigned int>(
+                        image->sourceHeight));
+            }
+            else
+            {
+                std::snprintf(
+                    text,
+                    sizeof(text),
+                    "+ %s",
+                    image->name);
+            }
+
+            lv_label_set_text(label, text);
+            lv_obj_center(label);
+        }
+    }
+
+    lv_obj_t *closeButton =
+        lv_btn_create(floorPlanSelectorRoot);
+
+    lv_obj_set_width(
+        closeButton,
+        lv_pct(100));
+
+    lv_obj_set_height(
+        closeButton,
+        34);
+
+    lv_obj_t *closeLabel =
+        lv_label_create(closeButton);
+
+    lv_label_set_text(
+        closeLabel,
+        "Close");
+
+    lv_obj_center(closeLabel);
+
+    lv_obj_add_event_cb(
+        closeButton,
+        MeasurementSetupScreen::
+            HandleFloorPlanSelectorClose,
+        LV_EVENT_CLICKED,
+        nullptr);
+
+    lv_obj_move_foreground(
+        floorPlanSelectorRoot);
+}
+
+void MeasurementSetupScreen::CloseFloorPlanSelector()
+{
+    if (floorPlanSelectorRoot == nullptr)
+    {
+        return;
+    }
+
+    lv_obj_add_flag(
+        floorPlanSelectorRoot,
+        LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_del_async(
+        floorPlanSelectorRoot);
+
+    floorPlanSelectorRoot = nullptr;
+}
+
+void MeasurementSetupScreen::RefreshFloorPlanButtonState()
+{
+    if (floorPlansButton == nullptr)
+    {
+        return;
+    }
+
+    const bool enabled =
+        GetPointContextSurveyId() != 0 &&
+        StorageService::IsAvailable() &&
+        !StorageService::IsExternalReadOnlyAccessActive();
+
+    if (enabled)
+    {
+        lv_obj_clear_state(
+            floorPlansButton,
+            LV_STATE_DISABLED);
+    }
+    else
+    {
+        lv_obj_add_state(
+            floorPlansButton,
+            LV_STATE_DISABLED);
+    }
 }
 
 uint32_t MeasurementSetupScreen::GetPointContextSurveyId() const
@@ -1447,6 +2063,7 @@ void MeasurementSetupScreen::CloseTextEditor(
     if (editedSiteSurvey)
     {
         RefreshSavedPointButtonState();
+        RefreshFloorPlanButtonState();
     }
 
     lv_obj_add_flag(
@@ -1501,6 +2118,14 @@ void MeasurementSetupScreen::Hide()
         surveySelectorRoot = nullptr;
     }
 
+    if (floorPlanSelectorRoot != nullptr)
+    {
+        lv_obj_del_async(
+            floorPlanSelectorRoot);
+
+        floorPlanSelectorRoot = nullptr;
+    }
+
     if (pointSelectorRoot != nullptr)
     {
         lv_obj_del_async(
@@ -1513,6 +2138,7 @@ void MeasurementSetupScreen::Hide()
 
     root = nullptr;
     selectSavedSurveyButton = nullptr;
+    floorPlansButton = nullptr;
     selectSavedPointButton = nullptr;
     siteSurveyTextArea = nullptr;
     surveyPointTextArea = nullptr;

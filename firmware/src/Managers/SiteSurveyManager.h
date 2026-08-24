@@ -34,5 +34,11 @@ public:
         uint32_t siteSurveyId,
         const char *name);
 
+    static bool RegisterFloorPlanImport(
+        uint32_t siteSurveyId,
+        const char *importPath,
+        uint32_t createdEpoch,
+        uint32_t &floorPlanId);
+
     static bool CloseSurvey();
 };

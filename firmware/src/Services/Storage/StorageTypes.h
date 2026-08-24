@@ -131,6 +131,25 @@ struct StoredFloorPlanIndex
     char imagePath[StoredFloorPlan::ImagePathCapacity] = {};
 };
 
+struct FloorPlanImportImage
+{
+    static constexpr uint8_t NameCapacity =
+        StoredFloorPlan::NameCapacity;
+
+    static constexpr uint8_t PathCapacity = 128;
+
+    bool available = false;
+
+    uint16_t sourceWidth = 0;
+    uint16_t sourceHeight = 0;
+
+    // Display name is derived from the source filename.
+    // The full import path is retained only while the
+    // image remains in the import staging directory.
+    char name[NameCapacity] = {};
+    char path[PathCapacity] = {};
+};
+
 struct StoredSiteSurveyPoint
 {
     static constexpr uint8_t NameCapacity =

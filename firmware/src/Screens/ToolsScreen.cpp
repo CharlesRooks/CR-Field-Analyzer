@@ -106,7 +106,7 @@ void ToolsScreen::CreateContent()
     }
 
     lv_obj_t *title = lv_label_create(parent);
-    lv_label_set_text(title, "USB Storage");
+    lv_label_set_text(title, "USB Transfer");
     lv_obj_set_style_text_color(title, Theme::Text(), 0);
     lv_obj_set_style_text_font(
         title,
@@ -160,7 +160,7 @@ void ToolsScreen::CreateContent()
         usbButtonLabel,
         Theme::ControlText(),
         0);
-    lv_label_set_text(usbButtonLabel, "USB Storage");
+    lv_label_set_text(usbButtonLabel, "USB Transfer");
     lv_obj_center(usbButtonLabel);
 
     displayedState = UsbStorageState::Unavailable;
@@ -220,25 +220,39 @@ void ToolsScreen::HandleUsbStorageButton(
         return;
     }
 
-    if (UsbStorageService::IsActive())
+    const UsbStorageState state =
+        UsbStorageService::GetState();
+
+    if (state == UsbStorageState::Active)
     {
-        UsbStorageService::ExitReadOnlyMode();
+        // Writable Mass Storage must be ejected by the host first.
+        // Do not let a touch action remove media while Windows may
+        // still be flushing filesystem metadata.
+        Serial.println(
+            "ToolsScreen: Eject the SentinelOS drive in Windows "
+            "before restarting");
         screen->refreshPending = true;
+        return;
+    }
+
+    if (state == UsbStorageState::HostEjected)
+    {
+        UsbStorageService::RestartAfterTransfer();
         return;
     }
 
     if (MeasurementBusy())
     {
         Serial.println(
-            "ToolsScreen: USB Storage Mode blocked while Wi-Fi is busy");
+            "ToolsScreen: USB Transfer Mode blocked while Wi-Fi is busy");
         screen->refreshPending = true;
         return;
     }
 
-    if (!UsbStorageService::EnterReadOnlyMode())
+    if (!UsbStorageService::EnterReadWriteMode())
     {
         Serial.println(
-            "ToolsScreen: USB Storage Mode could not start");
+            "ToolsScreen: USB Transfer Mode could not start");
     }
 
     screen->refreshPending = true;
@@ -264,14 +278,14 @@ void ToolsScreen::RefreshUsbStorageStatus()
         case UsbStorageState::Ready:
             lv_label_set_text(
                 statusLabel,
-                "USB storage ready");
+                "USB transfer ready");
 
             if (measurementBusy)
             {
                 lv_label_set_text(
                     detailLabel,
                     "Wait for the current Wi-Fi scan or measurement "
-                    "session to finish before exposing the SD card.");
+                    "session to finish before transferring files.");
 
                 lv_obj_add_state(
                     usbButton,
@@ -281,9 +295,9 @@ void ToolsScreen::RefreshUsbStorageStatus()
             {
                 lv_label_set_text(
                     detailLabel,
-                    "Share the SD card with Windows as a read-only "
-                    "USB drive. SentinelOS pauses SD writes while "
-                    "the drive is connected.");
+                    "Give Windows read/write access to the SD card. "
+                    "SentinelOS pauses SD use until the drive is safely "
+                    "ejected and the device restarts.");
 
                 lv_obj_clear_state(
                     usbButton,
@@ -292,51 +306,57 @@ void ToolsScreen::RefreshUsbStorageStatus()
 
             lv_label_set_text(
                 usbButtonLabel,
-                "Connect");
+                "Start Transfer");
             break;
 
         case UsbStorageState::Active:
         {
-            char detail[192];
+            char detail[220];
 
             std::snprintf(
                 detail,
                 sizeof(detail),
-                "READ-ONLY USB DRIVE\n"
-                "Windows can browse the SD card. Eject the drive in "
-                "Windows when finished.\nReads: %lu   Blocked writes: %lu",
+                "READ/WRITE USB DRIVE\n"
+                "Copy Floor Plans to /sentinel/import/floorplans/. "
+                "Safely eject the drive in Windows when finished.\n"
+                "Reads: %lu  Writes: %lu  Failed: %lu",
                 static_cast<unsigned long>(
                     UsbStorageService::GetReadRequestCount()),
                 static_cast<unsigned long>(
-                    UsbStorageService::GetRejectedWriteCount()));
+                    UsbStorageService::GetWriteRequestCount()),
+                static_cast<unsigned long>(
+                    UsbStorageService::GetFailedWriteRequestCount()));
 
             lv_label_set_text(
                 statusLabel,
-                "SD card shared with Windows");
+                "SD card controlled by Windows");
 
             lv_label_set_text(
                 detailLabel,
                 detail);
 
-            lv_obj_clear_state(
+            // Deliberately prevent a device-side disconnect while the
+            // writable host filesystem may still have cached writes.
+            lv_obj_add_state(
                 usbButton,
                 LV_STATE_DISABLED);
 
             lv_label_set_text(
                 usbButtonLabel,
-                "Disconnect");
+                "Eject in Windows");
             break;
         }
 
         case UsbStorageState::HostEjected:
             lv_label_set_text(
                 statusLabel,
-                "Drive safely ejected");
+                "Transfer complete");
 
             lv_label_set_text(
                 detailLabel,
-                "SentinelOS SD access is restored. Tap Reconnect "
-                "when you need to browse the card from Windows again.");
+                "Windows safely ejected the SD card. Restart SentinelOS "
+                "to remount the filesystem and refresh Surveys, Points "
+                "and Floor Plans.");
 
             lv_obj_clear_state(
                 usbButton,
@@ -344,7 +364,7 @@ void ToolsScreen::RefreshUsbStorageStatus()
 
             lv_label_set_text(
                 usbButtonLabel,
-                "Reconnect");
+                "Restart");
             break;
 
         case UsbStorageState::Unavailable:
@@ -353,13 +373,13 @@ void ToolsScreen::RefreshUsbStorageStatus()
                 statusLabel,
                 UsbStorageService::IsFeatureBuilt()
                     ? "SD card unavailable"
-                    : "USB storage test build inactive");
+                    : "USB transfer build inactive");
 
             lv_label_set_text(
                 detailLabel,
                 UsbStorageService::IsFeatureBuilt()
-                    ? "SentinelOS could not prepare the SD card for USB storage."
-                    : "USB storage is not available in this build.");
+                    ? "SentinelOS could not prepare the SD card for USB transfer."
+                    : "USB transfer is not available in this build.");
 
             lv_obj_add_state(
                 usbButton,

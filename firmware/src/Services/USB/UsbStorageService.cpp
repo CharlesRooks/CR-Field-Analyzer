@@ -12,7 +12,8 @@ UsbStorageState UsbStorageService::state =
     UsbStorageState::Unavailable;
 
 uint32_t UsbStorageService::readRequestCount = 0;
-uint32_t UsbStorageService::rejectedWriteCount = 0;
+uint32_t UsbStorageService::writeRequestCount = 0;
+uint32_t UsbStorageService::failedWriteRequestCount = 0;
 
 #if SENTINELOS_USB_STORAGE_FEATURE
 
@@ -28,7 +29,35 @@ constexpr uint16_t ExpectedSectorSize = 512;
 
 volatile bool hostEjectPending = false;
 volatile uint32_t pendingReadRequestCount = 0;
-volatile uint32_t pendingRejectedWriteCount = 0;
+volatile uint32_t pendingWriteRequestCount = 0;
+volatile uint32_t pendingFailedWriteRequestCount = 0;
+
+bool TransferRangeIsValid(
+    uint32_t lba,
+    uint32_t offset,
+    uint32_t bufferSize)
+{
+    const uint32_t sectorSize = SD.sectorSize();
+    const uint32_t sectorCount = SD.numSectors();
+
+    if (sectorSize != ExpectedSectorSize ||
+        sectorCount == 0 ||
+        offset >= sectorSize)
+    {
+        return false;
+    }
+
+    const uint64_t startByte =
+        static_cast<uint64_t>(lba) * sectorSize +
+        offset;
+
+    const uint64_t mediaBytes =
+        static_cast<uint64_t>(sectorCount) * sectorSize;
+
+    return startByte <= mediaBytes &&
+        static_cast<uint64_t>(bufferSize) <=
+            mediaBytes - startByte;
+}
 
 int32_t ReadSdBlocks(
     uint32_t lba,
@@ -41,13 +70,15 @@ int32_t ReadSdBlocks(
         return 0;
     }
 
-    const uint32_t sectorSize = SD.sectorSize();
-
-    if (sectorSize != ExpectedSectorSize ||
-        offset >= sectorSize)
+    if (!TransferRangeIsValid(
+            lba,
+            offset,
+            bufferSize))
     {
         return -1;
     }
+
+    const uint32_t sectorSize = SD.sectorSize();
 
     uint8_t *destination =
         static_cast<uint8_t *>(buffer);
@@ -87,14 +118,78 @@ int32_t ReadSdBlocks(
     return static_cast<int32_t>(bufferSize);
 }
 
-int32_t RejectSdWrites(
-    uint32_t,
-    uint32_t,
-    uint8_t *,
-    uint32_t)
+int32_t WriteSdBlocks(
+    uint32_t lba,
+    uint32_t offset,
+    uint8_t *buffer,
+    uint32_t bufferSize)
 {
-    ++pendingRejectedWriteCount;
-    return -1;
+    if (buffer == nullptr || bufferSize == 0)
+    {
+        return 0;
+    }
+
+    if (!TransferRangeIsValid(
+            lba,
+            offset,
+            bufferSize))
+    {
+        ++pendingFailedWriteRequestCount;
+        return -1;
+    }
+
+    const uint32_t sectorSize = SD.sectorSize();
+
+    const uint8_t *source = buffer;
+    uint32_t remaining = bufferSize;
+    uint32_t currentLba = lba;
+    uint32_t currentOffset = offset;
+    uint8_t sector[ExpectedSectorSize];
+
+    while (remaining > 0)
+    {
+        const uint32_t available =
+            sectorSize - currentOffset;
+
+        const uint32_t copyLength =
+            remaining < available
+                ? remaining
+                : available;
+
+        const bool fullSectorWrite =
+            currentOffset == 0 &&
+            copyLength == sectorSize;
+
+        if (!fullSectorWrite)
+        {
+            // Preserve bytes outside the host's requested range when
+            // TinyUSB supplies a partial-sector write.
+            if (!SD.readRAW(sector, currentLba))
+            {
+                ++pendingFailedWriteRequestCount;
+                return -1;
+            }
+        }
+
+        std::memcpy(
+            sector + currentOffset,
+            source,
+            copyLength);
+
+        if (!SD.writeRAW(sector, currentLba))
+        {
+            ++pendingFailedWriteRequestCount;
+            return -1;
+        }
+
+        source += copyLength;
+        remaining -= copyLength;
+        ++currentLba;
+        currentOffset = 0;
+    }
+
+    ++pendingWriteRequestCount;
+    return static_cast<int32_t>(bufferSize);
 }
 
 bool HandleStartStop(
@@ -118,12 +213,14 @@ void UsbStorageService::Begin()
 {
     state = UsbStorageState::Unavailable;
     readRequestCount = 0;
-    rejectedWriteCount = 0;
+    writeRequestCount = 0;
+    failedWriteRequestCount = 0;
 
 #if SENTINELOS_USB_STORAGE_FEATURE
     hostEjectPending = false;
     pendingReadRequestCount = 0;
-    pendingRejectedWriteCount = 0;
+    pendingWriteRequestCount = 0;
+    pendingFailedWriteRequestCount = 0;
 
     if (!StorageService::IsAvailable())
     {
@@ -145,9 +242,9 @@ void UsbStorageService::Begin()
 
     massStorage.vendorID("SENTINEL");
     massStorage.productID("SentinelOS SD");
-    massStorage.productRevision("0.3");
+    massStorage.productRevision("0.4");
     massStorage.onRead(ReadSdBlocks);
-    massStorage.onWrite(RejectSdWrites);
+    massStorage.onWrite(WriteSdBlocks);
     massStorage.onStartStop(HandleStartStop);
 
     if (!massStorage.begin(
@@ -159,15 +256,16 @@ void UsbStorageService::Begin()
         return;
     }
 
-    // The MSC interface is part of the production TinyUSB descriptor
-    // from boot, but the medium remains absent until the user explicitly
-    // enters USB Storage Mode from Tools.
+    // Keep the medium absent until the user explicitly enters USB
+    // Transfer Mode. This prevents Windows from taking ownership of
+    // the filesystem during normal SentinelOS operation.
     massStorage.mediaPresent(false);
 
     state = UsbStorageState::Ready;
 
     Serial.printf(
-        "UsbStorageService: Ready, read-only media %u x %u bytes\n",
+        "UsbStorageService: Ready, read/write transfer media "
+        "%u x %u bytes\n",
         static_cast<unsigned>(SD.numSectors()),
         static_cast<unsigned>(SD.sectorSize()));
 #else
@@ -180,7 +278,9 @@ void UsbStorageService::Update()
 {
 #if SENTINELOS_USB_STORAGE_FEATURE
     readRequestCount = pendingReadRequestCount;
-    rejectedWriteCount = pendingRejectedWriteCount;
+    writeRequestCount = pendingWriteRequestCount;
+    failedWriteRequestCount =
+        pendingFailedWriteRequestCount;
 
     if (hostEjectPending)
     {
@@ -188,11 +288,14 @@ void UsbStorageService::Update()
 
         if (state == UsbStorageState::Active)
         {
+            // Do NOT return the mounted FAT filesystem to SentinelOS
+            // after host writes. Its cached filesystem state may now be
+            // stale. Keep exclusive ownership locked until a clean reboot.
             state = UsbStorageState::HostEjected;
-            StorageService::SetExternalReadOnlyAccessActive(false);
 
             Serial.println(
-                "UsbStorageService: Host ejected media safely");
+                "UsbStorageService: Host safely ejected writable media; "
+                "restart required before SentinelOS SD access resumes");
         }
     }
 #endif
@@ -214,7 +317,10 @@ bool UsbStorageService::IsReady()
 
 bool UsbStorageService::IsActive()
 {
-    return state == UsbStorageState::Active;
+    // HostEjected intentionally remains active from SentinelOS' point
+    // of view. Navigation and storage access stay locked until reboot.
+    return state == UsbStorageState::Active ||
+        state == UsbStorageState::HostEjected;
 }
 
 UsbStorageState UsbStorageService::GetState()
@@ -222,11 +328,10 @@ UsbStorageState UsbStorageService::GetState()
     return state;
 }
 
-bool UsbStorageService::EnterReadOnlyMode()
+bool UsbStorageService::EnterReadWriteMode()
 {
 #if SENTINELOS_USB_STORAGE_FEATURE
-    if (state != UsbStorageState::Ready &&
-        state != UsbStorageState::HostEjected)
+    if (state != UsbStorageState::Ready)
     {
         return false;
     }
@@ -237,14 +342,25 @@ bool UsbStorageService::EnterReadOnlyMode()
         return false;
     }
 
+    // This existing StorageService interlock blocks all SentinelOS
+    // storage mutations and Wi-Fi measurement activity. The Tools page
+    // and NavigationManager additionally keep the user out of SD-backed
+    // workflows while Windows owns the volume.
     StorageService::SetExternalReadOnlyAccessActive(true);
 
     hostEjectPending = false;
+    pendingReadRequestCount = 0;
+    pendingWriteRequestCount = 0;
+    pendingFailedWriteRequestCount = 0;
+    readRequestCount = 0;
+    writeRequestCount = 0;
+    failedWriteRequestCount = 0;
+
     state = UsbStorageState::Active;
     massStorage.mediaPresent(true);
 
     Serial.println(
-        "UsbStorageService: USB Storage Mode active (READ-ONLY)");
+        "UsbStorageService: USB Transfer Mode active (READ/WRITE)");
 
     return true;
 #else
@@ -252,21 +368,25 @@ bool UsbStorageService::EnterReadOnlyMode()
 #endif
 }
 
-void UsbStorageService::ExitReadOnlyMode()
+void UsbStorageService::RestartAfterTransfer()
 {
 #if SENTINELOS_USB_STORAGE_FEATURE
-    if (state == UsbStorageState::Unavailable)
+    if (state != UsbStorageState::HostEjected)
     {
+        Serial.println(
+            "UsbStorageService: Restart blocked - "
+            "eject the drive in Windows first");
         return;
     }
 
     massStorage.mediaPresent(false);
-    hostEjectPending = false;
-    StorageService::SetExternalReadOnlyAccessActive(false);
-    state = UsbStorageState::Ready;
 
     Serial.println(
-        "UsbStorageService: USB Storage Mode stopped");
+        "UsbStorageService: Restarting to remount and reindex SD card");
+
+    Serial.flush();
+    delay(150);
+    ESP.restart();
 #endif
 }
 
@@ -275,7 +395,12 @@ uint32_t UsbStorageService::GetReadRequestCount()
     return readRequestCount;
 }
 
-uint32_t UsbStorageService::GetRejectedWriteCount()
+uint32_t UsbStorageService::GetWriteRequestCount()
 {
-    return rejectedWriteCount;
+    return writeRequestCount;
+}
+
+uint32_t UsbStorageService::GetFailedWriteRequestCount()
+{
+    return failedWriteRequestCount;
 }

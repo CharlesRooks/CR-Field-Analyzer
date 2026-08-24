@@ -592,6 +592,52 @@ bool SiteSurveyManager::PrepareSavedSurveyPoint(
     return true;
 }
 
+bool SiteSurveyManager::RegisterFloorPlanImport(
+    uint32_t siteSurveyId,
+    const char *importPath,
+    uint32_t createdEpoch,
+    uint32_t &floorPlanId)
+{
+    floorPlanId = 0;
+
+    if (siteSurveyId == 0 ||
+        importPath == nullptr ||
+        importPath[0] == '\0')
+    {
+        return false;
+    }
+
+    if (WiFiService::GetState() ==
+            WiFiScanState::Scanning ||
+        WiFiService::
+            IsAutomaticMeasurementSessionActive())
+    {
+        return false;
+    }
+
+    if (!StorageService::RegisterImportedFloorPlan(
+            siteSurveyId,
+            importPath,
+            createdEpoch,
+            floorPlanId))
+    {
+        Serial.printf(
+            "SiteSurveyManager: Floor Plan import failed "
+            "for Site Survey %lu\n",
+            static_cast<unsigned long>(siteSurveyId));
+
+        return false;
+    }
+
+    Serial.printf(
+        "SiteSurveyManager: Floor Plan %lu registered "
+        "for Site Survey %lu\n",
+        static_cast<unsigned long>(floorPlanId),
+        static_cast<unsigned long>(siteSurveyId));
+
+    return true;
+}
+
 bool SiteSurveyManager::CloseSurvey()
 {
     SiteSurveyInfo current{};

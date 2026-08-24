@@ -18,20 +18,26 @@ public:
 
     static bool IsFeatureBuilt();
     static bool IsReady();
+
+    // Returns true for the entire exclusive host-ownership window,
+    // including the post-eject state before SentinelOS restarts.
     static bool IsActive();
 
     static UsbStorageState GetState();
 
-    // USB Storage Mode is intentionally read-only. SentinelOS
-    // suspends its own storage writes while the host has the media.
-    static bool EnterReadOnlyMode();
-    static void ExitReadOnlyMode();
+    // USB Transfer Mode gives the host read/write access to the SD card.
+    // SentinelOS must not use the filesystem until the host safely ejects
+    // the volume and the device restarts.
+    static bool EnterReadWriteMode();
+    static void RestartAfterTransfer();
 
     static uint32_t GetReadRequestCount();
-    static uint32_t GetRejectedWriteCount();
+    static uint32_t GetWriteRequestCount();
+    static uint32_t GetFailedWriteRequestCount();
 
 private:
     static UsbStorageState state;
     static uint32_t readRequestCount;
-    static uint32_t rejectedWriteCount;
+    static uint32_t writeRequestCount;
+    static uint32_t failedWriteRequestCount;
 };

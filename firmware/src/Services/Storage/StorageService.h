@@ -37,8 +37,9 @@ public:
 
     static bool IsAvailable();
 
-    // While USB Mass Storage has the SD card exposed to a host,
-    // SentinelOS must not modify the filesystem.
+    // While USB Transfer Mode has the SD card exposed read/write to a host,
+    // SentinelOS must not access or modify the filesystem. The legacy API
+    // name is retained for compatibility with existing storage guards.
     static void SetExternalReadOnlyAccessActive(bool active);
     static bool IsExternalReadOnlyAccessActive();
 
@@ -77,6 +78,22 @@ public:
         const char *imagePath,
         uint16_t sourceWidth,
         uint16_t sourceHeight,
+        uint32_t createdEpoch,
+        uint32_t &floorPlanId);
+
+    static constexpr uint8_t
+        MaxFloorPlanImportImages = 32;
+
+    static uint8_t RefreshFloorPlanImportCatalog();
+
+    static uint8_t GetFloorPlanImportCount();
+
+    static const FloorPlanImportImage *
+        GetFloorPlanImportImage(uint8_t index);
+
+    static bool RegisterImportedFloorPlan(
+        uint32_t siteSurveyId,
+        const char *importPath,
         uint32_t createdEpoch,
         uint32_t &floorPlanId);
 
@@ -178,6 +195,11 @@ private:
 
     static uint8_t savedFloorPlanCount;
 
+    static FloorPlanImportImage
+        floorPlanImportIndex[MaxFloorPlanImportImages];
+
+    static uint8_t floorPlanImportCount;
+
     static uint32_t nextSiteSurveyPointId;
 
     static StoredSiteSurveyPointIndex
@@ -274,6 +296,25 @@ private:
 
     static void BuildFloorPlanPath(
         uint32_t floorPlanId,
+        char *buffer,
+        size_t bufferSize);
+
+    static bool IsSupportedFloorPlanImage(
+        const char *path);
+
+    static bool ReadFloorPlanImageDimensions(
+        const char *path,
+        uint16_t &width,
+        uint16_t &height);
+
+    static void BuildImportedFloorPlanName(
+        const char *path,
+        char *buffer,
+        size_t bufferSize);
+
+    static bool BuildRegisteredFloorPlanImagePath(
+        uint32_t floorPlanId,
+        const char *sourcePath,
         char *buffer,
         size_t bufferSize);
 
