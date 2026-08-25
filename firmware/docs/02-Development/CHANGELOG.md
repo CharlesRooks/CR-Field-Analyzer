@@ -104,6 +104,44 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 * Completed sessions retain their assigned Survey Point after the working label is cleared.
 * After a completed measurement, the Scan screen correctly returns to `Point: Set survey location` for the next survey point.
 
+### Milestone 10.24D — Floor Plan Viewer
+
+#### Added
+- Added full-screen Floor Plan viewer for registered Site Survey Floor Plans.
+- Added Floor Plan image rendering service.
+- Added PNG Floor Plan decoding support.
+- Added JPEG/JPG Floor Plan decoding support.
+- Added standard uncompressed 24-bit and 32-bit BMP rendering support.
+- Added PSRAM-backed Floor Plan rendering buffer.
+- Added aspect-ratio-preserving Fit rendering.
+- Added navigation from the registered Floor Plan catalog into the viewer.
+- Added Back navigation from the viewer to the Floor Plan catalog.
+
+#### Changed
+- Registered Floor Plans in Measurement Setup can now be opened directly for viewing.
+- Floor Plan images are scaled to fit the available AMOLED viewport without distortion.
+- Small Floor Plan images are not unnecessarily upscaled.
+- Floor Plan transfer guidance now references Tools → USB Transfer instead of the previous read-only USB storage workflow.
+- JPEGDEC is sourced directly from the upstream GitHub release because the requested PlatformIO Registry package version was unavailable.
+
+#### Hardened
+- Floor Plan viewer reports image decode failures instead of failing silently.
+- Rendering uses PSRAM for the image canvas to reduce internal RAM pressure.
+- Viewer resources are released when leaving the Floor Plan screen.
+- Image dimensions and aspect ratio are preserved during rendering.
+
+#### Verified
+- Firmware compiled successfully.
+- PNG and JPEG decoding dependencies compiled successfully.
+- Firmware used approximately 40% of available RAM and 21% of configured application flash.
+- Existing registered Floor Plan opened successfully on hardware.
+- Floor Plan image rendered successfully on the AMOLED display.
+- Fit-to-screen rendering displayed the complete Floor Plan.
+- Image aspect ratio was preserved.
+- Viewer navigation remained stable.
+- Back navigation returned successfully to the Floor Plan catalog.
+- Floor Plan could be reopened successfully.
+- Registered Floor Plan remained available and viewable after reboot.
 
 ### Milestone 10.24C — Floor Plan Assignment & Persistent Survey Point Coordinates
 

@@ -40,6 +40,9 @@ private:
 
     lv_obj_t *surveySelectorRoot = nullptr;
     lv_obj_t *floorPlanSelectorRoot = nullptr;
+    lv_obj_t *floorPlanViewerRoot = nullptr;
+    lv_obj_t *floorPlanCanvas = nullptr;
+    lv_color_t *floorPlanCanvasBuffer = nullptr;
     lv_obj_t *pointSelectorRoot = nullptr;
 
     uint32_t selectedSavedSurveyId = 0;
@@ -75,6 +78,12 @@ private:
     static void HandleFloorPlanImportButton(
         lv_event_t *event);
 
+    static void HandleRegisteredFloorPlanButton(
+        lv_event_t *event);
+
+    static void HandleFloorPlanViewerClose(
+        lv_event_t *event);
+
     static void HandleFloorPlanSelectorClose(
         lv_event_t *event);
 
@@ -103,6 +112,11 @@ private:
     void OpenFloorPlanSelector();
 
     void CloseFloorPlanSelector();
+
+    void OpenFloorPlanViewer(
+        uint8_t savedFloorPlanIndex);
+
+    void CloseFloorPlanViewer();
 
     void RefreshFloorPlanButtonState();
 

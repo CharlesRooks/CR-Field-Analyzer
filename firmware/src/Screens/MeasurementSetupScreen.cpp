@@ -1,11 +1,13 @@
 #include <Arduino.h>
 #include <cstring>
+#include <esp_heap_caps.h>
 
 #include "MeasurementSetupScreen.h"
 
 #include "../Services/Survey/SiteSurveyService.h"
 #include "../Managers/SiteSurveyManager.h"
 #include "../Services/Storage/StorageService.h"
+#include "../Services/Imaging/FloorPlanImageRenderer.h"
 #include "../Services/Time/TimeService.h"
 #include "../Services/WiFi/WiFiService.h"
 
@@ -672,6 +674,44 @@ HandleFloorPlanImportButton(
             lv_label_set_text(label, text);
         }
     }
+}
+
+void MeasurementSetupScreen::
+HandleRegisteredFloorPlanButton(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr ||
+        lv_event_get_code(event) != LV_EVENT_CLICKED)
+    {
+        return;
+    }
+
+    const uintptr_t rawIndex =
+        reinterpret_cast<uintptr_t>(
+            lv_event_get_user_data(event));
+
+    if (rawIndex > 0xFF)
+    {
+        return;
+    }
+
+    instance->OpenFloorPlanViewer(
+        static_cast<uint8_t>(rawIndex));
+}
+
+void MeasurementSetupScreen::
+HandleFloorPlanViewerClose(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr ||
+        lv_event_get_code(event) != LV_EVENT_CLICKED)
+    {
+        return;
+    }
+
+    instance->CloseFloorPlanViewer();
 }
 
 void MeasurementSetupScreen::
@@ -1382,7 +1422,7 @@ void MeasurementSetupScreen::OpenFloorPlanSelector()
         hasRegisteredFloorPlan = true;
 
         lv_obj_t *row =
-            lv_obj_create(list);
+            lv_btn_create(list);
 
         lv_obj_set_width(
             row,
@@ -1400,6 +1440,14 @@ void MeasurementSetupScreen::OpenFloorPlanSelector()
         lv_obj_clear_flag(
             row,
             LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_add_event_cb(
+            row,
+            MeasurementSetupScreen::
+                HandleRegisteredFloorPlanButton,
+            LV_EVENT_CLICKED,
+            reinterpret_cast<void *>(
+                static_cast<uintptr_t>(index)));
 
         lv_obj_t *label =
             lv_label_create(row);
@@ -1420,7 +1468,7 @@ void MeasurementSetupScreen::OpenFloorPlanSelector()
             std::snprintf(
                 text,
                 sizeof(text),
-                "#%lu  %s  %ux%u",
+                "View  #%lu  %s  %ux%u",
                 static_cast<unsigned long>(
                     floorPlan->floorPlanId),
                 floorPlan->name,
@@ -1434,7 +1482,7 @@ void MeasurementSetupScreen::OpenFloorPlanSelector()
             std::snprintf(
                 text,
                 sizeof(text),
-                "#%lu  %s",
+                "View  #%lu  %s",
                 static_cast<unsigned long>(
                     floorPlan->floorPlanId),
                 floorPlan->name);
@@ -1480,8 +1528,8 @@ void MeasurementSetupScreen::OpenFloorPlanSelector()
         lv_label_set_text(
             emptyImportLabel,
             "No JPG, PNG, or BMP images found. "
-            "Copy files to /sentinel/import/floorplans "
-            "on the SD card. USB Storage is read-only.");
+            "Use Tools > USB Transfer to copy files to "
+            "/sentinel/import/floorplans/.");
     }
     else
     {
@@ -1603,6 +1651,357 @@ void MeasurementSetupScreen::CloseFloorPlanSelector()
         floorPlanSelectorRoot);
 
     floorPlanSelectorRoot = nullptr;
+}
+
+void MeasurementSetupScreen::OpenFloorPlanViewer(
+    uint8_t savedFloorPlanIndex)
+{
+    if (floorPlanViewerRoot != nullptr ||
+        StorageService::IsExternalReadOnlyAccessActive())
+    {
+        return;
+    }
+
+    const StoredFloorPlanIndex *floorPlan =
+        StorageService::GetSavedFloorPlanIndex(
+            savedFloorPlanIndex);
+
+    const uint32_t surveyId =
+        GetPointContextSurveyId();
+
+    if (floorPlan == nullptr ||
+        !floorPlan->available ||
+        floorPlan->siteSurveyId == 0 ||
+        floorPlan->siteSurveyId != surveyId ||
+        floorPlan->imagePath[0] == '\0')
+    {
+        return;
+    }
+
+    lv_obj_t *parent = lv_layer_top();
+
+    if (parent == nullptr)
+    {
+        return;
+    }
+
+    floorPlanViewerRoot =
+        lv_obj_create(parent);
+
+    lv_obj_set_pos(
+        floorPlanViewerRoot,
+        0,
+        0);
+
+    lv_obj_set_size(
+        floorPlanViewerRoot,
+        lv_pct(100),
+        lv_pct(100));
+
+    lv_obj_set_style_pad_all(
+        floorPlanViewerRoot,
+        0,
+        0);
+
+    lv_obj_set_style_pad_row(
+        floorPlanViewerRoot,
+        0,
+        0);
+
+    lv_obj_set_style_bg_color(
+        floorPlanViewerRoot,
+        lv_color_make(0, 0, 0),
+        0);
+
+    lv_obj_set_style_border_width(
+        floorPlanViewerRoot,
+        0,
+        0);
+
+    lv_obj_set_flex_flow(
+        floorPlanViewerRoot,
+        LV_FLEX_FLOW_COLUMN);
+
+    lv_obj_clear_flag(
+        floorPlanViewerRoot,
+        LV_OBJ_FLAG_SCROLLABLE);
+
+    // ------------------------------------------------------------
+    // Compact viewer header
+    // ------------------------------------------------------------
+
+    lv_obj_t *header =
+        lv_obj_create(floorPlanViewerRoot);
+
+    lv_obj_set_width(
+        header,
+        lv_pct(100));
+
+    lv_obj_set_height(
+        header,
+        30);
+
+    lv_obj_set_style_pad_all(
+        header,
+        2,
+        0);
+
+    lv_obj_set_style_pad_column(
+        header,
+        4,
+        0);
+
+    lv_obj_set_style_border_width(
+        header,
+        0,
+        0);
+
+    lv_obj_set_flex_flow(
+        header,
+        LV_FLEX_FLOW_ROW);
+
+    lv_obj_clear_flag(
+        header,
+        LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *backButton =
+        lv_btn_create(header);
+
+    lv_obj_set_width(
+        backButton,
+        54);
+
+    lv_obj_set_height(
+        backButton,
+        26);
+
+    lv_obj_t *backLabel =
+        lv_label_create(backButton);
+
+    lv_label_set_text(
+        backLabel,
+        "Back");
+
+    lv_obj_center(backLabel);
+
+    lv_obj_add_event_cb(
+        backButton,
+        MeasurementSetupScreen::
+            HandleFloorPlanViewerClose,
+        LV_EVENT_CLICKED,
+        nullptr);
+
+    lv_obj_t *title =
+        lv_label_create(header);
+
+    lv_obj_set_width(
+        title,
+        0);
+
+    lv_obj_set_flex_grow(
+        title,
+        1);
+
+    lv_label_set_long_mode(
+        title,
+        LV_LABEL_LONG_DOT);
+
+    char titleText[96] = {};
+
+    std::snprintf(
+        titleText,
+        sizeof(titleText),
+        "#%lu  %s",
+        static_cast<unsigned long>(
+            floorPlan->floorPlanId),
+        floorPlan->name);
+
+    lv_label_set_text(
+        title,
+        titleText);
+
+    lv_obj_t *fitLabel =
+        lv_label_create(header);
+
+    lv_label_set_text(
+        fitLabel,
+        "FIT");
+
+    // ------------------------------------------------------------
+    // Full-width Floor Plan viewport
+    // ------------------------------------------------------------
+
+    lv_obj_t *viewport =
+        lv_obj_create(floorPlanViewerRoot);
+
+    lv_obj_remove_style_all(viewport);
+
+    lv_obj_set_width(
+        viewport,
+        lv_pct(100));
+
+    lv_obj_set_height(
+        viewport,
+        0);
+
+    lv_obj_set_flex_grow(
+        viewport,
+        1);
+
+    lv_obj_clear_flag(
+        viewport,
+        LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_update_layout(
+        floorPlanViewerRoot);
+
+    const lv_coord_t viewportWidth =
+        lv_obj_get_width(viewport);
+
+    const lv_coord_t viewportHeight =
+        lv_obj_get_height(viewport);
+
+    if (viewportWidth <= 0 ||
+        viewportHeight <= 0)
+    {
+        lv_obj_t *errorLabel =
+            lv_label_create(viewport);
+
+        lv_label_set_text(
+            errorLabel,
+            "Floor Plan viewport unavailable");
+
+        lv_obj_center(errorLabel);
+        lv_obj_move_foreground(
+            floorPlanViewerRoot);
+        return;
+    }
+
+    const size_t canvasBytes =
+        static_cast<size_t>(viewportWidth) *
+        static_cast<size_t>(viewportHeight) *
+        sizeof(lv_color_t);
+
+    floorPlanCanvasBuffer =
+        static_cast<lv_color_t *>(
+            heap_caps_malloc(
+                canvasBytes,
+                MALLOC_CAP_SPIRAM |
+                    MALLOC_CAP_8BIT));
+
+    if (floorPlanCanvasBuffer == nullptr)
+    {
+        floorPlanCanvasBuffer =
+            static_cast<lv_color_t *>(
+                heap_caps_malloc(
+                    canvasBytes,
+                    MALLOC_CAP_8BIT));
+    }
+
+    if (floorPlanCanvasBuffer == nullptr)
+    {
+        lv_obj_t *errorLabel =
+            lv_label_create(viewport);
+
+        lv_label_set_text(
+            errorLabel,
+            "Not enough memory to open Floor Plan");
+
+        lv_obj_center(errorLabel);
+        lv_obj_move_foreground(
+            floorPlanViewerRoot);
+        return;
+    }
+
+    floorPlanCanvas =
+        lv_canvas_create(viewport);
+
+    lv_canvas_set_buffer(
+        floorPlanCanvas,
+        floorPlanCanvasBuffer,
+        static_cast<lv_coord_t>(viewportWidth),
+        static_cast<lv_coord_t>(viewportHeight),
+        LV_IMG_CF_TRUE_COLOR);
+
+    lv_obj_center(
+        floorPlanCanvas);
+
+    FloorPlanRenderInfo renderInfo{};
+
+    if (!FloorPlanImageRenderer::RenderFit(
+            floorPlan->imagePath,
+            floorPlanCanvasBuffer,
+            static_cast<uint16_t>(viewportWidth),
+            static_cast<uint16_t>(viewportHeight),
+            renderInfo))
+    {
+        lv_obj_t *errorLabel =
+            lv_label_create(viewport);
+
+        lv_obj_set_width(
+            errorLabel,
+            lv_pct(90));
+
+        lv_label_set_long_mode(
+            errorLabel,
+            LV_LABEL_LONG_WRAP);
+
+        char errorText[128] = {};
+
+        std::snprintf(
+            errorText,
+            sizeof(errorText),
+            "Unable to display Floor Plan\n%s",
+            FloorPlanImageRenderer::GetLastError());
+
+        lv_label_set_text(
+            errorLabel,
+            errorText);
+
+        lv_obj_center(errorLabel);
+
+        Serial.printf(
+            "MeasurementSetupScreen: Floor Plan %lu viewer failed: %s\n",
+            static_cast<unsigned long>(
+                floorPlan->floorPlanId),
+            FloorPlanImageRenderer::GetLastError());
+    }
+    else
+    {
+        lv_obj_invalidate(
+            floorPlanCanvas);
+
+        Serial.printf(
+            "MeasurementSetupScreen: Viewing Floor Plan %lu: %s\n",
+            static_cast<unsigned long>(
+                floorPlan->floorPlanId),
+            floorPlan->imagePath);
+    }
+
+    lv_obj_move_foreground(
+        floorPlanViewerRoot);
+}
+
+void MeasurementSetupScreen::CloseFloorPlanViewer()
+{
+    if (floorPlanViewerRoot != nullptr)
+    {
+        // The canvas uses an externally allocated PSRAM buffer, so delete
+        // the LVGL object synchronously before releasing the buffer.
+        lv_obj_del(
+            floorPlanViewerRoot);
+
+        floorPlanViewerRoot = nullptr;
+        floorPlanCanvas = nullptr;
+    }
+
+    if (floorPlanCanvasBuffer != nullptr)
+    {
+        heap_caps_free(
+            floorPlanCanvasBuffer);
+
+        floorPlanCanvasBuffer = nullptr;
+    }
 }
 
 void MeasurementSetupScreen::RefreshFloorPlanButtonState()
@@ -2117,6 +2516,8 @@ void MeasurementSetupScreen::Hide()
 
         surveySelectorRoot = nullptr;
     }
+
+    CloseFloorPlanViewer();
 
     if (floorPlanSelectorRoot != nullptr)
     {
