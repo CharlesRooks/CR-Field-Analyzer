@@ -104,6 +104,46 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 * Completed sessions retain their assigned Survey Point after the working label is cleared.
 * After a completed measurement, the Scan screen correctly returns to `Point: Set survey location` for the next survey point.
 
+
+### Milestone 10.24E — Crosshair Survey Point Placement
+
+#### Added
+- Added interactive Survey Point placement on registered Floor Plans.
+- Added fixed-center crosshair positioning workflow.
+- Added drag-to-position Floor Plan interaction beneath the fixed crosshair.
+- Added normalized 0–10000 X/Y coordinate calculation from Floor Plan position.
+- Added live X/Y percentage display during placement.
+- Added support for assigning Floor Plan coordinates to existing persistent Survey Points.
+- Added pending Floor Plan placement for newly created Survey Points.
+- Added reopening of mapped Survey Points at their previously saved Floor Plan position.
+
+#### Changed
+- Floor Plan movement is constrained so the placement crosshair cannot move outside the actual image bounds.
+- Saving an existing Survey Point position updates its persistent Floor Plan coordinates immediately.
+- Saving placement now returns directly to Measurement Setup.
+- Floor Plan workflow exit control is labelled `Back to Setup`.
+- Existing mapped Points open directly at their stored location instead of defaulting to the center of the Floor Plan.
+- Placement coordinate text is explicitly rendered in white for visibility over Floor Plan imagery.
+
+#### Hardened
+- Cancelling placement leaves the previously stored Survey Point position unchanged.
+- New Survey Point coordinates remain pending until the Point is persistently created.
+- Reopening a mapped Point restores its stored Floor Plan ID and normalized coordinates.
+- Placement state is cleared appropriately when leaving the Floor Plan workflow.
+
+#### Verified
+- Firmware compiled successfully.
+- Crosshair remained fixed while the Floor Plan moved underneath it.
+- Floor Plan movement remained constrained to valid image bounds.
+- Live X/Y percentages were visible and updated during movement.
+- Existing Survey Point placement saved successfully.
+- Saved Survey Point reopened at its stored Floor Plan position.
+- New Survey Point placement completed successfully.
+- Save returned directly to Measurement Setup.
+- Cancel preserved the previously stored Survey Point position.
+- Back to Setup exited the Floor Plan workflow correctly.
+- Saved Floor Plan positions remained available after reboot.
+
 ### Milestone 10.24D — Floor Plan Viewer
 
 #### Added

@@ -41,9 +41,34 @@ private:
     lv_obj_t *surveySelectorRoot = nullptr;
     lv_obj_t *floorPlanSelectorRoot = nullptr;
     lv_obj_t *floorPlanViewerRoot = nullptr;
+    lv_obj_t *floorPlanViewport = nullptr;
     lv_obj_t *floorPlanCanvas = nullptr;
     lv_color_t *floorPlanCanvasBuffer = nullptr;
+    lv_obj_t *floorPlanViewerBackLabel = nullptr;
+    lv_obj_t *floorPlanPlacementButton = nullptr;
+    lv_obj_t *floorPlanPlacementButtonLabel = nullptr;
+    lv_obj_t *floorPlanCrosshairRoot = nullptr;
+    lv_obj_t *floorPlanPlacementStatusLabel = nullptr;
     lv_obj_t *pointSelectorRoot = nullptr;
+
+    uint32_t floorPlanViewerFloorPlanId = 0;
+    uint16_t floorPlanViewportWidth = 0;
+    uint16_t floorPlanViewportHeight = 0;
+    uint16_t floorPlanRenderedWidth = 0;
+    uint16_t floorPlanRenderedHeight = 0;
+    uint16_t floorPlanRenderedOffsetX = 0;
+    uint16_t floorPlanRenderedOffsetY = 0;
+
+    bool floorPlanPlacementMode = false;
+    bool floorPlanDragActive = false;
+    lv_coord_t floorPlanLastTouchX = 0;
+    lv_coord_t floorPlanLastTouchY = 0;
+
+    bool pendingMapPositionValid = false;
+    bool pendingMapPositionPersisted = false;
+    uint32_t pendingMapFloorPlanId = 0;
+    uint16_t pendingMapX = 0;
+    uint16_t pendingMapY = 0;
 
     uint32_t selectedSavedSurveyId = 0;
     uint32_t selectedSavedSurveyCreatedEpoch = 0;
@@ -84,6 +109,12 @@ private:
     static void HandleFloorPlanViewerClose(
         lv_event_t *event);
 
+    static void HandleFloorPlanPlacementButton(
+        lv_event_t *event);
+
+    static void HandleFloorPlanCanvasTouch(
+        lv_event_t *event);
+
     static void HandleFloorPlanSelectorClose(
         lv_event_t *event);
 
@@ -117,6 +148,28 @@ private:
         uint8_t savedFloorPlanIndex);
 
     void CloseFloorPlanViewer();
+
+    bool EnterFloorPlanPlacementMode();
+
+    void ExitFloorPlanPlacementMode();
+
+    bool ConfirmFloorPlanPlacement();
+
+    void ClampFloorPlanCanvasPosition(
+        lv_coord_t requestedX,
+        lv_coord_t requestedY);
+
+    void PositionFloorPlanCanvasAtMapPoint(
+        uint16_t mapX,
+        uint16_t mapY);
+
+    bool GetFloorPlanCrosshairMapPosition(
+        uint16_t &mapX,
+        uint16_t &mapY) const;
+
+    void UpdateFloorPlanPlacementStatus();
+
+    void ClearPendingMapPosition();
 
     void RefreshFloorPlanButtonState();
 

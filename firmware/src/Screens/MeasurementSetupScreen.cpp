@@ -29,6 +29,7 @@ void MeasurementSetupScreen::Show(
     selectedSavedSurveyCreatedEpoch = 0;
     selectedSavedPointId = 0;
     selectedSavedPointSiteSurveyId = 0;
+    ClearPendingMapPosition();
 
     lv_obj_t *parent =
         lv_layer_top();
@@ -517,6 +518,7 @@ HandleSavedSurveyButton(
     }
 
     instance->ClearSavedPointSelection(true);
+    instance->ClearPendingMapPosition();
 
     instance->selectedSavedSurveyId =
         survey->surveyId;
@@ -711,7 +713,99 @@ HandleFloorPlanViewerClose(
         return;
     }
 
+    if (instance->floorPlanPlacementMode)
+    {
+        instance->ExitFloorPlanPlacementMode();
+        return;
+    }
+
     instance->CloseFloorPlanViewer();
+}
+
+void MeasurementSetupScreen::
+HandleFloorPlanPlacementButton(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr ||
+        lv_event_get_code(event) != LV_EVENT_CLICKED)
+    {
+        return;
+    }
+
+    if (instance->floorPlanPlacementMode)
+    {
+        instance->ConfirmFloorPlanPlacement();
+    }
+    else
+    {
+        instance->EnterFloorPlanPlacementMode();
+    }
+}
+
+void MeasurementSetupScreen::
+HandleFloorPlanCanvasTouch(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr ||
+        !instance->floorPlanPlacementMode ||
+        instance->floorPlanCanvas == nullptr)
+    {
+        return;
+    }
+
+    const lv_event_code_t code =
+        lv_event_get_code(event);
+
+    if (code == LV_EVENT_RELEASED ||
+        code == LV_EVENT_PRESS_LOST)
+    {
+        instance->floorPlanDragActive = false;
+        return;
+    }
+
+    lv_indev_t *indev =
+        lv_indev_get_act();
+
+    if (indev == nullptr)
+    {
+        return;
+    }
+
+    lv_point_t point{};
+    lv_indev_get_point(indev, &point);
+
+    if (code == LV_EVENT_PRESSED)
+    {
+        instance->floorPlanDragActive = true;
+        instance->floorPlanLastTouchX = point.x;
+        instance->floorPlanLastTouchY = point.y;
+        return;
+    }
+
+    if (code == LV_EVENT_PRESSING &&
+        instance->floorPlanDragActive)
+    {
+        const lv_coord_t deltaX =
+            static_cast<lv_coord_t>(
+                point.x - instance->floorPlanLastTouchX);
+
+        const lv_coord_t deltaY =
+            static_cast<lv_coord_t>(
+                point.y - instance->floorPlanLastTouchY);
+
+        instance->floorPlanLastTouchX = point.x;
+        instance->floorPlanLastTouchY = point.y;
+
+        instance->ClampFloorPlanCanvasPosition(
+            static_cast<lv_coord_t>(
+                lv_obj_get_x(instance->floorPlanCanvas) + deltaX),
+            static_cast<lv_coord_t>(
+                lv_obj_get_y(instance->floorPlanCanvas) + deltaY));
+
+        instance->UpdateFloorPlanPlacementStatus();
+    }
 }
 
 void MeasurementSetupScreen::
@@ -793,6 +887,17 @@ HandleSavedPointButton(
     instance->selectedSavedPointId = point->pointId;
     instance->selectedSavedPointSiteSurveyId =
         point->siteSurveyId;
+
+    instance->ClearPendingMapPosition();
+
+    if (point->floorPlanId != 0)
+    {
+        instance->pendingMapPositionValid = true;
+        instance->pendingMapPositionPersisted = true;
+        instance->pendingMapFloorPlanId = point->floorPlanId;
+        instance->pendingMapX = point->mapX;
+        instance->pendingMapY = point->mapY;
+    }
 
     Serial.printf(
         "MeasurementSetupScreen: Saved Survey Point "
@@ -976,6 +1081,41 @@ void MeasurementSetupScreen::HandleStartButton(
         return;
     }
 
+    if (instance->pendingMapPositionValid &&
+        !instance->pendingMapPositionPersisted)
+    {
+        const uint32_t preparedPointId =
+            WiFiService::GetMeasurementSurveyPointId();
+
+        if (preparedPointId == 0 ||
+            !StorageService::SetSiteSurveyPointMapPosition(
+                preparedPointId,
+                instance->pendingMapFloorPlanId,
+                instance->pendingMapX,
+                instance->pendingMapY))
+        {
+            // PrepareNewSurveyPoint may already have created the Point.
+            // Preserve that identity so a retry reuses it instead of
+            // creating a duplicate Point after a storage failure.
+            if (preparedPointId != 0 &&
+                instance->selectedSavedPointId == 0)
+            {
+                instance->selectedSavedPointId =
+                    preparedPointId;
+                instance->selectedSavedPointSiteSurveyId =
+                    instance->GetPointContextSurveyId();
+            }
+
+            Serial.println(
+                "MeasurementSetupScreen: "
+                "Survey Point map position could not be saved");
+
+            return;
+        }
+
+        instance->pendingMapPositionPersisted = true;
+    }
+
     const MeasurementSetupAction action =
         instance->pendingAction;
 
@@ -1025,6 +1165,7 @@ void MeasurementSetupScreen::HandleTextAreaFocus(
         instance->selectedSavedSurveyId = 0;
         instance->selectedSavedSurveyCreatedEpoch = 0;
         instance->ClearSavedPointSelection(false);
+        instance->ClearPendingMapPosition();
         instance->RefreshSavedPointButtonState();
         instance->RefreshFloorPlanButtonState();
     }
@@ -1621,7 +1762,7 @@ void MeasurementSetupScreen::OpenFloorPlanSelector()
 
     lv_label_set_text(
         closeLabel,
-        "Close");
+        "Back to Setup");
 
     lv_obj_center(closeLabel);
 
@@ -1684,6 +1825,12 @@ void MeasurementSetupScreen::OpenFloorPlanViewer(
     {
         return;
     }
+
+    floorPlanViewerFloorPlanId =
+        floorPlan->floorPlanId;
+
+    floorPlanPlacementMode = false;
+    floorPlanDragActive = false;
 
     floorPlanViewerRoot =
         lv_obj_create(parent);
@@ -1769,20 +1916,21 @@ void MeasurementSetupScreen::OpenFloorPlanViewer(
 
     lv_obj_set_width(
         backButton,
-        54);
+        58);
 
     lv_obj_set_height(
         backButton,
         26);
 
-    lv_obj_t *backLabel =
+    floorPlanViewerBackLabel =
         lv_label_create(backButton);
 
     lv_label_set_text(
-        backLabel,
+        floorPlanViewerBackLabel,
         "Back");
 
-    lv_obj_center(backLabel);
+    lv_obj_center(
+        floorPlanViewerBackLabel);
 
     lv_obj_add_event_cb(
         backButton,
@@ -1820,52 +1968,103 @@ void MeasurementSetupScreen::OpenFloorPlanViewer(
         title,
         titleText);
 
-    lv_obj_t *fitLabel =
-        lv_label_create(header);
+    floorPlanPlacementButton =
+        lv_btn_create(header);
+
+    lv_obj_set_width(
+        floorPlanPlacementButton,
+        62);
+
+    lv_obj_set_height(
+        floorPlanPlacementButton,
+        26);
+
+    floorPlanPlacementButtonLabel =
+        lv_label_create(
+            floorPlanPlacementButton);
 
     lv_label_set_text(
-        fitLabel,
-        "FIT");
+        floorPlanPlacementButtonLabel,
+        "Place");
+
+    lv_obj_center(
+        floorPlanPlacementButtonLabel);
+
+    lv_obj_add_event_cb(
+        floorPlanPlacementButton,
+        MeasurementSetupScreen::
+            HandleFloorPlanPlacementButton,
+        LV_EVENT_CLICKED,
+        nullptr);
+
+    // A point name is required before a map position can be assigned.
+    const char *pointName =
+        surveyPointTextArea != nullptr
+            ? lv_textarea_get_text(
+                  surveyPointTextArea)
+            : nullptr;
+
+    if (pointName == nullptr ||
+        pointName[0] == '\0')
+    {
+        lv_obj_add_state(
+            floorPlanPlacementButton,
+            LV_STATE_DISABLED);
+    }
 
     // ------------------------------------------------------------
     // Full-width Floor Plan viewport
     // ------------------------------------------------------------
 
-    lv_obj_t *viewport =
+    floorPlanViewport =
         lv_obj_create(floorPlanViewerRoot);
 
-    lv_obj_remove_style_all(viewport);
+    lv_obj_remove_style_all(
+        floorPlanViewport);
 
     lv_obj_set_width(
-        viewport,
+        floorPlanViewport,
         lv_pct(100));
 
     lv_obj_set_height(
-        viewport,
+        floorPlanViewport,
         0);
 
     lv_obj_set_flex_grow(
-        viewport,
+        floorPlanViewport,
         1);
 
+    lv_obj_set_style_bg_color(
+        floorPlanViewport,
+        lv_color_make(0, 0, 0),
+        0);
+
+    lv_obj_set_style_bg_opa(
+        floorPlanViewport,
+        LV_OPA_COVER,
+        0);
+
     lv_obj_clear_flag(
-        viewport,
+        floorPlanViewport,
         LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_update_layout(
         floorPlanViewerRoot);
 
     const lv_coord_t viewportWidth =
-        lv_obj_get_width(viewport);
+        lv_obj_get_width(
+            floorPlanViewport);
 
     const lv_coord_t viewportHeight =
-        lv_obj_get_height(viewport);
+        lv_obj_get_height(
+            floorPlanViewport);
 
     if (viewportWidth <= 0 ||
         viewportHeight <= 0)
     {
         lv_obj_t *errorLabel =
-            lv_label_create(viewport);
+            lv_label_create(
+                floorPlanViewport);
 
         lv_label_set_text(
             errorLabel,
@@ -1876,6 +2075,14 @@ void MeasurementSetupScreen::OpenFloorPlanViewer(
             floorPlanViewerRoot);
         return;
     }
+
+    floorPlanViewportWidth =
+        static_cast<uint16_t>(
+            viewportWidth);
+
+    floorPlanViewportHeight =
+        static_cast<uint16_t>(
+            viewportHeight);
 
     const size_t canvasBytes =
         static_cast<size_t>(viewportWidth) *
@@ -1901,7 +2108,8 @@ void MeasurementSetupScreen::OpenFloorPlanViewer(
     if (floorPlanCanvasBuffer == nullptr)
     {
         lv_obj_t *errorLabel =
-            lv_label_create(viewport);
+            lv_label_create(
+                floorPlanViewport);
 
         lv_label_set_text(
             errorLabel,
@@ -1914,29 +2122,39 @@ void MeasurementSetupScreen::OpenFloorPlanViewer(
     }
 
     floorPlanCanvas =
-        lv_canvas_create(viewport);
+        lv_canvas_create(
+            floorPlanViewport);
 
     lv_canvas_set_buffer(
         floorPlanCanvas,
         floorPlanCanvasBuffer,
-        static_cast<lv_coord_t>(viewportWidth),
-        static_cast<lv_coord_t>(viewportHeight),
+        viewportWidth,
+        viewportHeight,
         LV_IMG_CF_TRUE_COLOR);
 
-    lv_obj_center(
-        floorPlanCanvas);
+    lv_obj_set_pos(
+        floorPlanCanvas,
+        0,
+        0);
 
     FloorPlanRenderInfo renderInfo{};
 
     if (!FloorPlanImageRenderer::RenderFit(
             floorPlan->imagePath,
             floorPlanCanvasBuffer,
-            static_cast<uint16_t>(viewportWidth),
-            static_cast<uint16_t>(viewportHeight),
+            static_cast<uint16_t>(
+                viewportWidth),
+            static_cast<uint16_t>(
+                viewportHeight),
             renderInfo))
     {
+        lv_obj_add_state(
+            floorPlanPlacementButton,
+            LV_STATE_DISABLED);
+
         lv_obj_t *errorLabel =
-            lv_label_create(viewport);
+            lv_label_create(
+                floorPlanViewport);
 
         lv_obj_set_width(
             errorLabel,
@@ -1968,8 +2186,246 @@ void MeasurementSetupScreen::OpenFloorPlanViewer(
     }
     else
     {
+        floorPlanRenderedWidth =
+            renderInfo.renderedWidth;
+
+        floorPlanRenderedHeight =
+            renderInfo.renderedHeight;
+
+        floorPlanRenderedOffsetX =
+            renderInfo.offsetX;
+
+        floorPlanRenderedOffsetY =
+            renderInfo.offsetY;
+
+        lv_obj_add_flag(
+            floorPlanCanvas,
+            LV_OBJ_FLAG_CLICKABLE);
+
+        lv_obj_add_event_cb(
+            floorPlanCanvas,
+            MeasurementSetupScreen::
+                HandleFloorPlanCanvasTouch,
+            LV_EVENT_PRESSED,
+            nullptr);
+
+        lv_obj_add_event_cb(
+            floorPlanCanvas,
+            MeasurementSetupScreen::
+                HandleFloorPlanCanvasTouch,
+            LV_EVENT_PRESSING,
+            nullptr);
+
+        lv_obj_add_event_cb(
+            floorPlanCanvas,
+            MeasurementSetupScreen::
+                HandleFloorPlanCanvasTouch,
+            LV_EVENT_RELEASED,
+            nullptr);
+
+        lv_obj_add_event_cb(
+            floorPlanCanvas,
+            MeasurementSetupScreen::
+                HandleFloorPlanCanvasTouch,
+            LV_EVENT_PRESS_LOST,
+            nullptr);
+
         lv_obj_invalidate(
             floorPlanCanvas);
+
+        // --------------------------------------------------------
+        // Fixed center crosshair. The map moves underneath it.
+        // The black outer strokes plus white inner strokes keep the
+        // reticle visible on both bright and dark Floor Plans.
+        // --------------------------------------------------------
+
+        floorPlanCrosshairRoot =
+            lv_obj_create(
+                floorPlanViewport);
+
+        lv_obj_remove_style_all(
+            floorPlanCrosshairRoot);
+
+        lv_obj_set_size(
+            floorPlanCrosshairRoot,
+            35,
+            35);
+
+        lv_obj_center(
+            floorPlanCrosshairRoot);
+
+        lv_obj_clear_flag(
+            floorPlanCrosshairRoot,
+            LV_OBJ_FLAG_CLICKABLE);
+
+        lv_obj_t *horizontalOuter =
+            lv_obj_create(
+                floorPlanCrosshairRoot);
+
+        lv_obj_remove_style_all(
+            horizontalOuter);
+
+        lv_obj_set_size(
+            horizontalOuter,
+            35,
+            3);
+
+        lv_obj_set_style_bg_color(
+            horizontalOuter,
+            lv_color_make(0, 0, 0),
+            0);
+
+        lv_obj_set_style_bg_opa(
+            horizontalOuter,
+            LV_OPA_COVER,
+            0);
+
+        lv_obj_center(
+            horizontalOuter);
+
+        lv_obj_clear_flag(
+            horizontalOuter,
+            LV_OBJ_FLAG_CLICKABLE);
+
+        lv_obj_t *horizontalInner =
+            lv_obj_create(
+                floorPlanCrosshairRoot);
+
+        lv_obj_remove_style_all(
+            horizontalInner);
+
+        lv_obj_set_size(
+            horizontalInner,
+            35,
+            1);
+
+        lv_obj_set_style_bg_color(
+            horizontalInner,
+            lv_color_make(255, 255, 255),
+            0);
+
+        lv_obj_set_style_bg_opa(
+            horizontalInner,
+            LV_OPA_COVER,
+            0);
+
+        lv_obj_center(
+            horizontalInner);
+
+        lv_obj_clear_flag(
+            horizontalInner,
+            LV_OBJ_FLAG_CLICKABLE);
+
+        lv_obj_t *verticalOuter =
+            lv_obj_create(
+                floorPlanCrosshairRoot);
+
+        lv_obj_remove_style_all(
+            verticalOuter);
+
+        lv_obj_set_size(
+            verticalOuter,
+            3,
+            35);
+
+        lv_obj_set_style_bg_color(
+            verticalOuter,
+            lv_color_make(0, 0, 0),
+            0);
+
+        lv_obj_set_style_bg_opa(
+            verticalOuter,
+            LV_OPA_COVER,
+            0);
+
+        lv_obj_center(
+            verticalOuter);
+
+        lv_obj_clear_flag(
+            verticalOuter,
+            LV_OBJ_FLAG_CLICKABLE);
+
+        lv_obj_t *verticalInner =
+            lv_obj_create(
+                floorPlanCrosshairRoot);
+
+        lv_obj_remove_style_all(
+            verticalInner);
+
+        lv_obj_set_size(
+            verticalInner,
+            1,
+            35);
+
+        lv_obj_set_style_bg_color(
+            verticalInner,
+            lv_color_make(255, 255, 255),
+            0);
+
+        lv_obj_set_style_bg_opa(
+            verticalInner,
+            LV_OPA_COVER,
+            0);
+
+        lv_obj_center(
+            verticalInner);
+
+        lv_obj_clear_flag(
+            verticalInner,
+            LV_OBJ_FLAG_CLICKABLE);
+
+        floorPlanPlacementStatusLabel =
+            lv_label_create(
+                floorPlanViewport);
+
+        lv_obj_set_width(
+            floorPlanPlacementStatusLabel,
+            lv_pct(96));
+
+        lv_label_set_long_mode(
+            floorPlanPlacementStatusLabel,
+            LV_LABEL_LONG_DOT);
+
+        lv_obj_set_style_text_align(
+            floorPlanPlacementStatusLabel,
+            LV_TEXT_ALIGN_CENTER,
+            0);
+
+        // Force high-contrast status text. The screen theme can otherwise
+        // inherit black label text, which disappears over the Floor Plan.
+        lv_obj_set_style_text_color(
+            floorPlanPlacementStatusLabel,
+            lv_color_make(255, 255, 255),
+            0);
+
+        lv_obj_set_style_bg_color(
+            floorPlanPlacementStatusLabel,
+            lv_color_make(0, 0, 0),
+            0);
+
+        lv_obj_set_style_bg_opa(
+            floorPlanPlacementStatusLabel,
+            LV_OPA_70,
+            0);
+
+        lv_obj_set_style_pad_all(
+            floorPlanPlacementStatusLabel,
+            2,
+            0);
+
+        lv_obj_align(
+            floorPlanPlacementStatusLabel,
+            LV_ALIGN_BOTTOM_MID,
+            0,
+            -2);
+
+        lv_obj_add_flag(
+            floorPlanCrosshairRoot,
+            LV_OBJ_FLAG_HIDDEN);
+
+        lv_obj_add_flag(
+            floorPlanPlacementStatusLabel,
+            LV_OBJ_FLAG_HIDDEN);
 
         Serial.printf(
             "MeasurementSetupScreen: Viewing Floor Plan %lu: %s\n",
@@ -1980,10 +2436,23 @@ void MeasurementSetupScreen::OpenFloorPlanViewer(
 
     lv_obj_move_foreground(
         floorPlanViewerRoot);
+
+    // If the selected Point already has a saved (or pending) position on
+    // this Floor Plan, reopen directly at that position. This makes the
+    // stored location immediately visible instead of showing the generic
+    // fit-to-screen centre and requiring another Place tap.
+    if (pendingMapPositionValid &&
+        pendingMapFloorPlanId == floorPlanViewerFloorPlanId)
+    {
+        EnterFloorPlanPlacementMode();
+    }
 }
 
 void MeasurementSetupScreen::CloseFloorPlanViewer()
 {
+    floorPlanPlacementMode = false;
+    floorPlanDragActive = false;
+
     if (floorPlanViewerRoot != nullptr)
     {
         // The canvas uses an externally allocated PSRAM buffer, so delete
@@ -1992,8 +2461,23 @@ void MeasurementSetupScreen::CloseFloorPlanViewer()
             floorPlanViewerRoot);
 
         floorPlanViewerRoot = nullptr;
-        floorPlanCanvas = nullptr;
     }
+
+    floorPlanViewport = nullptr;
+    floorPlanCanvas = nullptr;
+    floorPlanViewerBackLabel = nullptr;
+    floorPlanPlacementButton = nullptr;
+    floorPlanPlacementButtonLabel = nullptr;
+    floorPlanCrosshairRoot = nullptr;
+    floorPlanPlacementStatusLabel = nullptr;
+
+    floorPlanViewerFloorPlanId = 0;
+    floorPlanViewportWidth = 0;
+    floorPlanViewportHeight = 0;
+    floorPlanRenderedWidth = 0;
+    floorPlanRenderedHeight = 0;
+    floorPlanRenderedOffsetX = 0;
+    floorPlanRenderedOffsetY = 0;
 
     if (floorPlanCanvasBuffer != nullptr)
     {
@@ -2002,6 +2486,470 @@ void MeasurementSetupScreen::CloseFloorPlanViewer()
 
         floorPlanCanvasBuffer = nullptr;
     }
+}
+
+bool MeasurementSetupScreen::EnterFloorPlanPlacementMode()
+{
+    if (floorPlanPlacementMode ||
+        floorPlanViewerFloorPlanId == 0 ||
+        floorPlanCanvas == nullptr ||
+        floorPlanCrosshairRoot == nullptr ||
+        floorPlanPlacementStatusLabel == nullptr ||
+        floorPlanRenderedWidth == 0 ||
+        floorPlanRenderedHeight == 0 ||
+        surveyPointTextArea == nullptr)
+    {
+        return false;
+    }
+
+    const char *pointName =
+        lv_textarea_get_text(
+            surveyPointTextArea);
+
+    if (pointName == nullptr ||
+        pointName[0] == '\0')
+    {
+        return false;
+    }
+
+    floorPlanPlacementMode = true;
+    floorPlanDragActive = false;
+
+    if (floorPlanViewerBackLabel != nullptr)
+    {
+        lv_label_set_text(
+            floorPlanViewerBackLabel,
+            "Cancel");
+    }
+
+    if (floorPlanPlacementButtonLabel != nullptr)
+    {
+        lv_label_set_text(
+            floorPlanPlacementButtonLabel,
+            "Save");
+    }
+
+    lv_obj_clear_flag(
+        floorPlanCrosshairRoot,
+        LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_clear_flag(
+        floorPlanPlacementStatusLabel,
+        LV_OBJ_FLAG_HIDDEN);
+
+    if (pendingMapPositionValid &&
+        pendingMapFloorPlanId ==
+            floorPlanViewerFloorPlanId)
+    {
+        PositionFloorPlanCanvasAtMapPoint(
+            pendingMapX,
+            pendingMapY);
+    }
+    else
+    {
+        // An unmapped Point begins at the center of the Floor Plan.
+        PositionFloorPlanCanvasAtMapPoint(
+            StoredSiteSurveyPoint::MapCoordinateMaximum / 2,
+            StoredSiteSurveyPoint::MapCoordinateMaximum / 2);
+    }
+
+    UpdateFloorPlanPlacementStatus();
+
+    lv_obj_move_foreground(
+        floorPlanCrosshairRoot);
+
+    lv_obj_move_foreground(
+        floorPlanPlacementStatusLabel);
+
+    return true;
+}
+
+void MeasurementSetupScreen::ExitFloorPlanPlacementMode()
+{
+    if (!floorPlanPlacementMode)
+    {
+        return;
+    }
+
+    floorPlanPlacementMode = false;
+    floorPlanDragActive = false;
+
+    if (floorPlanViewerBackLabel != nullptr)
+    {
+        lv_label_set_text(
+            floorPlanViewerBackLabel,
+            "Back");
+    }
+
+    if (floorPlanPlacementButtonLabel != nullptr)
+    {
+        lv_label_set_text(
+            floorPlanPlacementButtonLabel,
+            "Place");
+    }
+
+    if (floorPlanCrosshairRoot != nullptr)
+    {
+        lv_obj_add_flag(
+            floorPlanCrosshairRoot,
+            LV_OBJ_FLAG_HIDDEN);
+    }
+
+    if (floorPlanPlacementStatusLabel != nullptr)
+    {
+        lv_obj_add_flag(
+            floorPlanPlacementStatusLabel,
+            LV_OBJ_FLAG_HIDDEN);
+    }
+
+    if (floorPlanCanvas != nullptr)
+    {
+        // Return to the validated 10.24D fit-to-screen view.
+        lv_obj_set_pos(
+            floorPlanCanvas,
+            0,
+            0);
+    }
+}
+
+bool MeasurementSetupScreen::ConfirmFloorPlanPlacement()
+{
+    if (!floorPlanPlacementMode ||
+        floorPlanViewerFloorPlanId == 0)
+    {
+        return false;
+    }
+
+    uint16_t mapX = 0;
+    uint16_t mapY = 0;
+
+    if (!GetFloorPlanCrosshairMapPosition(
+            mapX,
+            mapY))
+    {
+        return false;
+    }
+
+    bool persisted = false;
+
+    if (selectedSavedPointId != 0)
+    {
+        const uint32_t surveyId =
+            GetPointContextSurveyId();
+
+        if (surveyId == 0 ||
+            selectedSavedPointSiteSurveyId != surveyId ||
+            !StorageService::SetSiteSurveyPointMapPosition(
+                selectedSavedPointId,
+                floorPlanViewerFloorPlanId,
+                mapX,
+                mapY))
+        {
+            Serial.println(
+                "MeasurementSetupScreen: Saved Survey Point "
+                "map placement failed");
+            return false;
+        }
+
+        persisted = true;
+    }
+
+    pendingMapPositionValid = true;
+    pendingMapPositionPersisted = persisted;
+    pendingMapFloorPlanId =
+        floorPlanViewerFloorPlanId;
+    pendingMapX = mapX;
+    pendingMapY = mapY;
+
+    const char *pointName =
+        surveyPointTextArea != nullptr
+            ? lv_textarea_get_text(
+                  surveyPointTextArea)
+            : "";
+
+    Serial.printf(
+        "MeasurementSetupScreen: Survey Point %s %s "
+        "Floor Plan %lu at %u,%u\n",
+        pointName != nullptr ? pointName : "",
+        persisted ? "mapped to" : "placement pending on",
+        static_cast<unsigned long>(
+            floorPlanViewerFloorPlanId),
+        static_cast<unsigned int>(mapX),
+        static_cast<unsigned int>(mapY));
+
+    // Saving a Point placement completes the Floor Plan task. Return
+    // directly to Measurement Setup instead of leaving the user to back
+    // through the viewer and Floor Plan selector manually.
+    ExitFloorPlanPlacementMode();
+    CloseFloorPlanViewer();
+    CloseFloorPlanSelector();
+    return true;
+}
+
+void MeasurementSetupScreen::ClampFloorPlanCanvasPosition(
+    lv_coord_t requestedX,
+    lv_coord_t requestedY)
+{
+    if (floorPlanCanvas == nullptr ||
+        floorPlanViewportWidth == 0 ||
+        floorPlanViewportHeight == 0 ||
+        floorPlanRenderedWidth == 0 ||
+        floorPlanRenderedHeight == 0)
+    {
+        return;
+    }
+
+    const int32_t centerX =
+        static_cast<int32_t>(
+            floorPlanViewportWidth / 2U);
+
+    const int32_t centerY =
+        static_cast<int32_t>(
+            floorPlanViewportHeight / 2U);
+
+    const int32_t minimumX =
+        centerX -
+        (static_cast<int32_t>(
+             floorPlanRenderedOffsetX) +
+         static_cast<int32_t>(
+             floorPlanRenderedWidth) - 1);
+
+    const int32_t maximumX =
+        centerX -
+        static_cast<int32_t>(
+            floorPlanRenderedOffsetX);
+
+    const int32_t minimumY =
+        centerY -
+        (static_cast<int32_t>(
+             floorPlanRenderedOffsetY) +
+         static_cast<int32_t>(
+             floorPlanRenderedHeight) - 1);
+
+    const int32_t maximumY =
+        centerY -
+        static_cast<int32_t>(
+            floorPlanRenderedOffsetY);
+
+    int32_t clampedX = requestedX;
+    int32_t clampedY = requestedY;
+
+    if (clampedX < minimumX)
+    {
+        clampedX = minimumX;
+    }
+    else if (clampedX > maximumX)
+    {
+        clampedX = maximumX;
+    }
+
+    if (clampedY < minimumY)
+    {
+        clampedY = minimumY;
+    }
+    else if (clampedY > maximumY)
+    {
+        clampedY = maximumY;
+    }
+
+    lv_obj_set_pos(
+        floorPlanCanvas,
+        static_cast<lv_coord_t>(clampedX),
+        static_cast<lv_coord_t>(clampedY));
+}
+
+void MeasurementSetupScreen::PositionFloorPlanCanvasAtMapPoint(
+    uint16_t mapX,
+    uint16_t mapY)
+{
+    if (floorPlanCanvas == nullptr ||
+        floorPlanRenderedWidth == 0 ||
+        floorPlanRenderedHeight == 0)
+    {
+        return;
+    }
+
+    if (mapX > StoredSiteSurveyPoint::MapCoordinateMaximum)
+    {
+        mapX = StoredSiteSurveyPoint::MapCoordinateMaximum;
+    }
+
+    if (mapY > StoredSiteSurveyPoint::MapCoordinateMaximum)
+    {
+        mapY = StoredSiteSurveyPoint::MapCoordinateMaximum;
+    }
+
+    uint32_t renderedX = 0;
+    uint32_t renderedY = 0;
+
+    if (floorPlanRenderedWidth > 1)
+    {
+        renderedX =
+            (static_cast<uint32_t>(mapX) *
+                 (floorPlanRenderedWidth - 1U) +
+             StoredSiteSurveyPoint::MapCoordinateMaximum / 2U) /
+            StoredSiteSurveyPoint::MapCoordinateMaximum;
+    }
+
+    if (floorPlanRenderedHeight > 1)
+    {
+        renderedY =
+            (static_cast<uint32_t>(mapY) *
+                 (floorPlanRenderedHeight - 1U) +
+             StoredSiteSurveyPoint::MapCoordinateMaximum / 2U) /
+            StoredSiteSurveyPoint::MapCoordinateMaximum;
+    }
+
+    const int32_t requestedX =
+        static_cast<int32_t>(
+            floorPlanViewportWidth / 2U) -
+        static_cast<int32_t>(
+            floorPlanRenderedOffsetX) -
+        static_cast<int32_t>(renderedX);
+
+    const int32_t requestedY =
+        static_cast<int32_t>(
+            floorPlanViewportHeight / 2U) -
+        static_cast<int32_t>(
+            floorPlanRenderedOffsetY) -
+        static_cast<int32_t>(renderedY);
+
+    ClampFloorPlanCanvasPosition(
+        static_cast<lv_coord_t>(requestedX),
+        static_cast<lv_coord_t>(requestedY));
+}
+
+bool MeasurementSetupScreen::GetFloorPlanCrosshairMapPosition(
+    uint16_t &mapX,
+    uint16_t &mapY) const
+{
+    mapX = 0;
+    mapY = 0;
+
+    if (floorPlanCanvas == nullptr ||
+        floorPlanViewportWidth == 0 ||
+        floorPlanViewportHeight == 0 ||
+        floorPlanRenderedWidth == 0 ||
+        floorPlanRenderedHeight == 0)
+    {
+        return false;
+    }
+
+    const int32_t canvasX =
+        lv_obj_get_x(
+            floorPlanCanvas);
+
+    const int32_t canvasY =
+        lv_obj_get_y(
+            floorPlanCanvas);
+
+    int32_t renderedX =
+        static_cast<int32_t>(
+            floorPlanViewportWidth / 2U) -
+        canvasX -
+        static_cast<int32_t>(
+            floorPlanRenderedOffsetX);
+
+    int32_t renderedY =
+        static_cast<int32_t>(
+            floorPlanViewportHeight / 2U) -
+        canvasY -
+        static_cast<int32_t>(
+            floorPlanRenderedOffsetY);
+
+    if (renderedX < 0)
+    {
+        renderedX = 0;
+    }
+    else if (renderedX >=
+             floorPlanRenderedWidth)
+    {
+        renderedX =
+            floorPlanRenderedWidth - 1U;
+    }
+
+    if (renderedY < 0)
+    {
+        renderedY = 0;
+    }
+    else if (renderedY >=
+             floorPlanRenderedHeight)
+    {
+        renderedY =
+            floorPlanRenderedHeight - 1U;
+    }
+
+    if (floorPlanRenderedWidth > 1)
+    {
+        mapX =
+            static_cast<uint16_t>(
+                (static_cast<uint32_t>(renderedX) *
+                     StoredSiteSurveyPoint::MapCoordinateMaximum +
+                 (floorPlanRenderedWidth - 1U) / 2U) /
+                (floorPlanRenderedWidth - 1U));
+    }
+
+    if (floorPlanRenderedHeight > 1)
+    {
+        mapY =
+            static_cast<uint16_t>(
+                (static_cast<uint32_t>(renderedY) *
+                     StoredSiteSurveyPoint::MapCoordinateMaximum +
+                 (floorPlanRenderedHeight - 1U) / 2U) /
+                (floorPlanRenderedHeight - 1U));
+    }
+
+    return true;
+}
+
+void MeasurementSetupScreen::UpdateFloorPlanPlacementStatus()
+{
+    if (!floorPlanPlacementMode ||
+        floorPlanPlacementStatusLabel == nullptr)
+    {
+        return;
+    }
+
+    uint16_t mapX = 0;
+    uint16_t mapY = 0;
+
+    if (!GetFloorPlanCrosshairMapPosition(
+            mapX,
+            mapY))
+    {
+        return;
+    }
+
+    const char *pointName =
+        surveyPointTextArea != nullptr
+            ? lv_textarea_get_text(
+                  surveyPointTextArea)
+            : "";
+
+    char status[128] = {};
+
+    std::snprintf(
+        status,
+        sizeof(status),
+        "%s  X %u.%02u%%  Y %u.%02u%%",
+        pointName != nullptr ? pointName : "",
+        static_cast<unsigned int>(mapX / 100U),
+        static_cast<unsigned int>(mapX % 100U),
+        static_cast<unsigned int>(mapY / 100U),
+        static_cast<unsigned int>(mapY % 100U));
+
+    lv_label_set_text(
+        floorPlanPlacementStatusLabel,
+        status);
+}
+
+void MeasurementSetupScreen::ClearPendingMapPosition()
+{
+    pendingMapPositionValid = false;
+    pendingMapPositionPersisted = false;
+    pendingMapFloorPlanId = 0;
+    pendingMapX = 0;
+    pendingMapY = 0;
 }
 
 void MeasurementSetupScreen::RefreshFloorPlanButtonState()
@@ -2109,8 +3057,16 @@ void MeasurementSetupScreen::RefreshSavedPointButtonState()
 void MeasurementSetupScreen::ClearSavedPointSelection(
     bool clearText)
 {
+    const bool hadSavedPoint =
+        selectedSavedPointId != 0;
+
     selectedSavedPointId = 0;
     selectedSavedPointSiteSurveyId = 0;
+
+    if (hadSavedPoint)
+    {
+        ClearPendingMapPosition();
+    }
 
     if (clearText &&
         surveyPointTextArea != nullptr)
@@ -2550,6 +3506,7 @@ void MeasurementSetupScreen::Hide()
     selectedSavedSurveyCreatedEpoch = 0;
     selectedSavedPointId = 0;
     selectedSavedPointSiteSurveyId = 0;
+    ClearPendingMapPosition();
     instance = nullptr;
 
     editorRoot = nullptr;
