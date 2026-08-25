@@ -3784,9 +3784,9 @@ void MeasurementSetupScreen::CloseTextEditor(
     editorKeyboard = nullptr;
     editorTarget = nullptr;
 
-    // Return normal left/right page navigation only after the modal
-    // Measurement Setup workflow has fully closed.
-    NavigationManager::SetGestureNavigationEnabled(true);
+    // Measurement Setup is still open after the keyboard closes, so keep
+    // global page-swipe navigation locked. Hide() is the single owner of
+    // restoring gesture navigation when the modal workflow actually exits.
 }
 
 void MeasurementSetupScreen::HandleKeyboardEvent(
@@ -3869,4 +3869,10 @@ void MeasurementSetupScreen::Hide()
     editorTextArea = nullptr;
     editorKeyboard = nullptr;
     editorTarget = nullptr;
+
+    // Measurement Setup owns the global page-swipe lock for its entire
+    // visible lifetime. Always release that lock when the modal closes,
+    // regardless of whether it was exited by Start, Cancel, Close Survey,
+    // or after returning from the Floor Plan workflow.
+    NavigationManager::SetGestureNavigationEnabled(true);
 }

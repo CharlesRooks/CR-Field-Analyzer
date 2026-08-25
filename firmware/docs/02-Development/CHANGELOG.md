@@ -104,6 +104,46 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 * Completed sessions retain their assigned Survey Point after the working label is cleared.
 * After a completed measurement, the Scan screen correctly returns to `Point: Set survey location` for the next survey point.
 
+
+### Milestone 10.25A — Physical AP Inventory Storage Foundation
+
+#### Added
+- Added persistent Physical Access Point data model.
+- Added globally unique Physical AP IDs.
+- Added parent Site Survey references for Physical AP records.
+- Added optional Floor Plan assignment and normalized 0–10000 map coordinates for Physical APs.
+- Added support for associating multiple BSSIDs/radios with one Physical AP.
+- Added CRC32-protected Physical AP storage records.
+- Added persistent Physical AP catalog and startup recovery.
+- Added `/sentinel/access_points/` storage directory.
+- Added monotonic Physical AP ID allocation with protection against ID reuse.
+
+#### Changed
+- Physical AP identity is stored independently from Survey Point identity.
+- A Physical AP represents installed infrastructure, while a Survey Point continues to represent the technician measurement location.
+- Global gesture navigation remains disabled while Measurement Setup is active and is restored when Measurement Setup closes.
+
+#### Hardened
+- Physical AP records are validated against their owning Site Survey.
+- Physical AP Floor Plan references are constrained to the same Site Survey.
+- Physical AP map coordinates are validated against the normalized coordinate range.
+- Duplicate BSSID ownership within the same Site Survey is prevented.
+- Measurement Setup now restores global page navigation through its normal Hide lifecycle.
+- Closing subordinate Measurement Setup workflows no longer restores page navigation prematurely.
+
+#### Verified
+- Firmware compiled successfully.
+- Firmware flashed and booted successfully on hardware.
+- Existing Site Survey functionality remained operational.
+- Existing Survey Point functionality remained operational.
+- Existing Floor Plan viewer and placement functionality remained operational.
+- Existing Wi-Fi History functionality remained operational.
+- `/sentinel/access_points/` was created successfully on the SD card.
+- Physical AP storage initialized successfully with no existing AP records.
+- Cancelling Measurement Setup returned to Wi-Fi Scan with global navigation restored.
+- Starting a Wi-Fi measurement returned to Wi-Fi Scan with global navigation restored.
+- Navigation to Tools and other application pages remained functional after Floor Plan workflows.
+
 ### Milestone 10.24F — Existing Survey Point Markers
 
 #### Added

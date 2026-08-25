@@ -190,6 +190,65 @@ struct StoredSiteSurveyPointIndex
         StoredSiteSurveyPoint::NameCapacity] = {};
 };
 
+struct StoredPhysicalAccessPointBssid
+{
+    static constexpr uint8_t BssidLength =
+        WiFiNetworkInfo::BssidLength;
+
+    uint8_t bytes[BssidLength] = {};
+};
+
+struct StoredPhysicalAccessPoint
+{
+    static constexpr uint8_t NameCapacity = 32;
+    static constexpr uint8_t MaxAssociatedBssids = 8;
+    static constexpr uint16_t MapCoordinateMaximum = 10000;
+
+    bool available = false;
+    uint8_t formatVersion = 0;
+
+    // Physical AP identity is globally monotonic across SentinelOS,
+    // while siteSurveyId establishes ownership by one Site Survey.
+    uint32_t accessPointId = 0;
+    uint32_t siteSurveyId = 0;
+    uint32_t floorPlanId = 0;
+    uint32_t createdEpoch = 0;
+
+    // A physical AP has one authoritative technician-confirmed map
+    // position. floorPlanId == 0 means intentionally unmapped.
+    uint16_t mapX = 0;
+    uint16_t mapY = 0;
+
+    char name[NameCapacity] = {};
+
+    // One physical AP may expose multiple radios/BSSIDs. SentinelOS
+    // stores the radio identities separately from the AP's physical
+    // map position so RSSI is never used to infer AP location.
+    uint8_t associatedBssidCount = 0;
+    StoredPhysicalAccessPointBssid
+        associatedBssids[MaxAssociatedBssids] = {};
+};
+
+struct StoredPhysicalAccessPointIndex
+{
+    bool available = false;
+
+    uint32_t accessPointId = 0;
+    uint32_t siteSurveyId = 0;
+    uint32_t floorPlanId = 0;
+    uint32_t createdEpoch = 0;
+
+    uint16_t mapX = 0;
+    uint16_t mapY = 0;
+
+    char name[StoredPhysicalAccessPoint::NameCapacity] = {};
+
+    uint8_t associatedBssidCount = 0;
+    StoredPhysicalAccessPointBssid
+        associatedBssids[
+            StoredPhysicalAccessPoint::MaxAssociatedBssids] = {};
+};
+
 struct StoredActiveSiteSurvey
 {
     static constexpr uint8_t NameCapacity = 48;

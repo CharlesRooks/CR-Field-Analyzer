@@ -23,6 +23,9 @@ namespace
     constexpr const char *SurveyPointsDirectory =
         "/sentinel/survey_points";
 
+    constexpr const char *AccessPointsDirectory =
+        "/sentinel/access_points";
+
     constexpr const char *FloorPlansDirectory =
         "/sentinel/floorplans";
 
@@ -44,6 +47,9 @@ namespace
 
     constexpr const char *TemporarySiteSurveyPointPath =
         "/sentinel/survey_points/point.tmp";
+
+    constexpr const char *TemporaryPhysicalAccessPointPath =
+        "/sentinel/access_points/ap.tmp";
 
     constexpr const char *TemporaryFloorPlanPath =
         "/sentinel/floorplans/floor.tmp";
@@ -588,6 +594,67 @@ namespace
         return true;
     }
 
+    bool IsZeroBssid(const uint8_t *bssid)
+    {
+        if (bssid == nullptr)
+        {
+            return true;
+        }
+
+        for (uint8_t index = 0;
+             index < WiFiNetworkInfo::BssidLength;
+             ++index)
+        {
+            if (bssid[index] != 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    bool BssidEquals(
+        const uint8_t *left,
+        const uint8_t *right)
+    {
+        if (left == nullptr || right == nullptr)
+        {
+            return false;
+        }
+
+        return std::memcmp(
+                   left,
+                   right,
+                   WiFiNetworkInfo::BssidLength) == 0;
+    }
+
+    bool FormatBssid(
+        const uint8_t *bssid,
+        char *buffer,
+        size_t bufferSize)
+    {
+        if (bssid == nullptr ||
+            buffer == nullptr ||
+            bufferSize < 18)
+        {
+            return false;
+        }
+
+        const int written = std::snprintf(
+            buffer,
+            bufferSize,
+            "%02X:%02X:%02X:%02X:%02X:%02X",
+            static_cast<unsigned int>(bssid[0]),
+            static_cast<unsigned int>(bssid[1]),
+            static_cast<unsigned int>(bssid[2]),
+            static_cast<unsigned int>(bssid[3]),
+            static_cast<unsigned int>(bssid[4]),
+            static_cast<unsigned int>(bssid[5]));
+
+        return written == 17;
+    }
+
     WiFiSignalQuality ClassifyStoredSignal(
         int32_t rssi)
     {
@@ -812,6 +879,14 @@ StoredSiteSurveyPointIndex
 
 uint8_t StorageService::savedSiteSurveyPointCount = 0;
 
+uint32_t StorageService::nextPhysicalAccessPointId = 1;
+
+StoredPhysicalAccessPointIndex
+    StorageService::savedPhysicalAccessPointIndex[
+        StorageService::MaxSavedPhysicalAccessPoints] = {};
+
+uint8_t StorageService::savedPhysicalAccessPointCount = 0;
+
 void StorageService::Begin()
 {
     available = false;
@@ -830,6 +905,8 @@ void StorageService::Begin()
     floorPlanImportCount = 0;
     nextSiteSurveyPointId = 1;
     savedSiteSurveyPointCount = 0;
+    nextPhysicalAccessPointId = 1;
+    savedPhysicalAccessPointCount = 0;
     loadedSession = emptyStoredSession;
     loadedSessionIndex = InvalidLoadedSessionIndex;
 
@@ -871,6 +948,14 @@ void StorageService::Begin()
     {
         savedSiteSurveyPointIndex[index] =
             StoredSiteSurveyPointIndex{};
+    }
+
+    for (uint8_t index = 0;
+         index < MaxSavedPhysicalAccessPoints;
+         ++index)
+    {
+        savedPhysicalAccessPointIndex[index] =
+            StoredPhysicalAccessPointIndex{};
     }
 
     Serial.println(
@@ -927,6 +1012,8 @@ void StorageService::Begin()
     RefreshFloorPlanImportCatalog();
     RecoverInterruptedSiteSurveyPointUpdates();
     LoadSiteSurveyPointSequence();
+    RecoverInterruptedPhysicalAccessPointUpdates();
+    LoadPhysicalAccessPointSequence();
 
     Serial.println(
         "StorageService: Startup validation skipped; "
@@ -2155,6 +2242,356 @@ bool StorageService::SetSiteSurveyPointMapPosition(
     return true;
 }
 
+bool StorageService::CreatePhysicalAccessPointRecord(
+    uint32_t siteSurveyId,
+    const char *name,
+    uint32_t createdEpoch,
+    uint32_t &accessPointId)
+{
+    accessPointId = 0;
+
+    if (externalReadOnlyAccessActive)
+    {
+        Serial.println(
+            "StorageService: Physical AP creation blocked "
+            "while USB Storage Mode is active");
+        return false;
+    }
+
+    if (!available ||
+        siteSurveyId == 0 ||
+        name == nullptr ||
+        name[0] == '\0')
+    {
+        return false;
+    }
+
+    if (!EnsureDirectories())
+    {
+        return false;
+    }
+
+    StoredSiteSurvey parentSurvey{};
+
+    if (!ReadSiteSurveyRecord(siteSurveyId, parentSurvey))
+    {
+        Serial.printf(
+            "StorageService: Physical AP creation failed - "
+            "parent Site Survey %lu is invalid\n",
+            static_cast<unsigned long>(siteSurveyId));
+        return false;
+    }
+
+    StoredPhysicalAccessPoint accessPoint{};
+    accessPoint.available = true;
+    accessPoint.formatVersion =
+        CurrentPhysicalAccessPointFormatVersion;
+    accessPoint.accessPointId = nextPhysicalAccessPointId;
+    accessPoint.siteSurveyId = siteSurveyId;
+    accessPoint.floorPlanId = 0;
+    accessPoint.mapX = 0;
+    accessPoint.mapY = 0;
+    accessPoint.createdEpoch = createdEpoch;
+    accessPoint.associatedBssidCount = 0;
+
+    std::strncpy(
+        accessPoint.name,
+        name,
+        StoredPhysicalAccessPoint::NameCapacity - 1);
+    accessPoint.name[
+        StoredPhysicalAccessPoint::NameCapacity - 1] = '\0';
+
+    if (!WritePhysicalAccessPointRecord(accessPoint))
+    {
+        Serial.printf(
+            "StorageService: Physical AP %lu creation failed\n",
+            static_cast<unsigned long>(accessPoint.accessPointId));
+        return false;
+    }
+
+    accessPointId = accessPoint.accessPointId;
+
+    StoredPhysicalAccessPointIndex indexEntry{};
+    indexEntry.available = true;
+    indexEntry.accessPointId = accessPoint.accessPointId;
+    indexEntry.siteSurveyId = accessPoint.siteSurveyId;
+    indexEntry.floorPlanId = accessPoint.floorPlanId;
+    indexEntry.createdEpoch = accessPoint.createdEpoch;
+    indexEntry.mapX = accessPoint.mapX;
+    indexEntry.mapY = accessPoint.mapY;
+    indexEntry.associatedBssidCount = 0;
+
+    std::strncpy(
+        indexEntry.name,
+        accessPoint.name,
+        sizeof(indexEntry.name) - 1);
+    indexEntry.name[sizeof(indexEntry.name) - 1] = '\0';
+
+    const uint8_t moveEnd =
+        savedPhysicalAccessPointCount < MaxSavedPhysicalAccessPoints
+            ? savedPhysicalAccessPointCount
+            : MaxSavedPhysicalAccessPoints - 1;
+
+    for (uint8_t index = moveEnd; index > 0; --index)
+    {
+        savedPhysicalAccessPointIndex[index] =
+            savedPhysicalAccessPointIndex[index - 1];
+    }
+
+    savedPhysicalAccessPointIndex[0] = indexEntry;
+
+    if (savedPhysicalAccessPointCount < MaxSavedPhysicalAccessPoints)
+    {
+        ++savedPhysicalAccessPointCount;
+    }
+
+    ++nextPhysicalAccessPointId;
+    if (nextPhysicalAccessPointId == 0)
+    {
+        nextPhysicalAccessPointId = 1;
+    }
+
+    filesystemUsedBytes = SD.usedBytes();
+
+    Serial.printf(
+        "StorageService: Physical AP %lu created for Site Survey %lu: %s\n",
+        static_cast<unsigned long>(accessPointId),
+        static_cast<unsigned long>(siteSurveyId),
+        accessPoint.name);
+
+    return true;
+}
+
+bool StorageService::LoadPhysicalAccessPoint(
+    uint32_t accessPointId,
+    StoredPhysicalAccessPoint &accessPoint)
+{
+    return ReadPhysicalAccessPointRecord(
+        accessPointId,
+        accessPoint);
+}
+
+bool StorageService::SetPhysicalAccessPointMapPosition(
+    uint32_t accessPointId,
+    uint32_t floorPlanId,
+    uint16_t mapX,
+    uint16_t mapY)
+{
+    if (externalReadOnlyAccessActive)
+    {
+        Serial.println(
+            "StorageService: Physical AP map update blocked "
+            "while USB Storage Mode is active");
+        return false;
+    }
+
+    if (!available ||
+        accessPointId == 0 ||
+        mapX > StoredPhysicalAccessPoint::MapCoordinateMaximum ||
+        mapY > StoredPhysicalAccessPoint::MapCoordinateMaximum ||
+        (floorPlanId == 0 && (mapX != 0 || mapY != 0)))
+    {
+        return false;
+    }
+
+    StoredPhysicalAccessPoint accessPoint{};
+
+    if (!ReadPhysicalAccessPointRecord(accessPointId, accessPoint))
+    {
+        return false;
+    }
+
+    StoredSiteSurvey parentSurvey{};
+    if (!ReadSiteSurveyRecord(accessPoint.siteSurveyId, parentSurvey))
+    {
+        return false;
+    }
+
+    if (floorPlanId != 0)
+    {
+        StoredFloorPlan floorPlan{};
+        if (!ReadFloorPlanRecord(floorPlanId, floorPlan) ||
+            floorPlan.siteSurveyId != accessPoint.siteSurveyId ||
+            !IsSupportedFloorPlanImage(floorPlan.imagePath) ||
+            !SD.exists(floorPlan.imagePath))
+        {
+            Serial.printf(
+                "StorageService: Physical AP %lu map update failed - "
+                "Floor Plan %lu is invalid for Site Survey %lu\n",
+                static_cast<unsigned long>(accessPointId),
+                static_cast<unsigned long>(floorPlanId),
+                static_cast<unsigned long>(accessPoint.siteSurveyId));
+            return false;
+        }
+    }
+
+    accessPoint.available = true;
+    accessPoint.formatVersion = CurrentPhysicalAccessPointFormatVersion;
+    accessPoint.floorPlanId = floorPlanId;
+    accessPoint.mapX = mapX;
+    accessPoint.mapY = mapY;
+
+    if (!WritePhysicalAccessPointRecord(accessPoint, true))
+    {
+        return false;
+    }
+
+    for (uint8_t index = 0;
+         index < savedPhysicalAccessPointCount;
+         ++index)
+    {
+        StoredPhysicalAccessPointIndex &entry =
+            savedPhysicalAccessPointIndex[index];
+
+        if (entry.available && entry.accessPointId == accessPointId)
+        {
+            entry.floorPlanId = floorPlanId;
+            entry.mapX = mapX;
+            entry.mapY = mapY;
+            break;
+        }
+    }
+
+    filesystemUsedBytes = SD.usedBytes();
+    return true;
+}
+
+bool StorageService::SetPhysicalAccessPointBssids(
+    uint32_t accessPointId,
+    const StoredPhysicalAccessPointBssid *bssids,
+    uint8_t bssidCount)
+{
+    if (externalReadOnlyAccessActive)
+    {
+        Serial.println(
+            "StorageService: Physical AP BSSID update blocked "
+            "while USB Storage Mode is active");
+        return false;
+    }
+
+    if (!available ||
+        accessPointId == 0 ||
+        bssidCount > StoredPhysicalAccessPoint::MaxAssociatedBssids ||
+        (bssidCount != 0 && bssids == nullptr))
+    {
+        return false;
+    }
+
+    for (uint8_t index = 0; index < bssidCount; ++index)
+    {
+        if (IsZeroBssid(bssids[index].bytes))
+        {
+            return false;
+        }
+
+        for (uint8_t compare = 0; compare < index; ++compare)
+        {
+            if (BssidEquals(
+                    bssids[index].bytes,
+                    bssids[compare].bytes))
+            {
+                return false;
+            }
+        }
+    }
+
+    StoredPhysicalAccessPoint accessPoint{};
+    if (!ReadPhysicalAccessPointRecord(accessPointId, accessPoint))
+    {
+        return false;
+    }
+
+    // A BSSID represents one radio identity and may belong to only one
+    // physical AP within a Site Survey. Reject ambiguous associations.
+    for (uint8_t candidate = 0; candidate < bssidCount; ++candidate)
+    {
+        for (uint8_t apIndex = 0;
+             apIndex < savedPhysicalAccessPointCount;
+             ++apIndex)
+        {
+            const StoredPhysicalAccessPointIndex &existing =
+                savedPhysicalAccessPointIndex[apIndex];
+
+            if (!existing.available ||
+                existing.accessPointId == accessPointId ||
+                existing.siteSurveyId != accessPoint.siteSurveyId)
+            {
+                continue;
+            }
+
+            for (uint8_t existingBssid = 0;
+                 existingBssid < existing.associatedBssidCount;
+                 ++existingBssid)
+            {
+                if (BssidEquals(
+                        bssids[candidate].bytes,
+                        existing.associatedBssids[existingBssid].bytes))
+                {
+                    Serial.printf(
+                        "StorageService: Physical AP %lu BSSID update "
+                        "rejected - radio already belongs to AP %lu\n",
+                        static_cast<unsigned long>(accessPointId),
+                        static_cast<unsigned long>(existing.accessPointId));
+                    return false;
+                }
+            }
+        }
+    }
+
+    accessPoint.associatedBssidCount = bssidCount;
+    for (uint8_t index = 0;
+         index < StoredPhysicalAccessPoint::MaxAssociatedBssids;
+         ++index)
+    {
+        accessPoint.associatedBssids[index] =
+            StoredPhysicalAccessPointBssid{};
+    }
+
+    for (uint8_t index = 0; index < bssidCount; ++index)
+    {
+        accessPoint.associatedBssids[index] = bssids[index];
+    }
+
+    accessPoint.formatVersion = CurrentPhysicalAccessPointFormatVersion;
+
+    if (!WritePhysicalAccessPointRecord(accessPoint, true))
+    {
+        return false;
+    }
+
+    for (uint8_t index = 0;
+         index < savedPhysicalAccessPointCount;
+         ++index)
+    {
+        StoredPhysicalAccessPointIndex &entry =
+            savedPhysicalAccessPointIndex[index];
+
+        if (entry.available && entry.accessPointId == accessPointId)
+        {
+            entry.associatedBssidCount = bssidCount;
+
+            for (uint8_t bssidIndex = 0;
+                 bssidIndex < StoredPhysicalAccessPoint::MaxAssociatedBssids;
+                 ++bssidIndex)
+            {
+                entry.associatedBssids[bssidIndex] =
+                    StoredPhysicalAccessPointBssid{};
+            }
+
+            for (uint8_t bssidIndex = 0;
+                 bssidIndex < bssidCount;
+                 ++bssidIndex)
+            {
+                entry.associatedBssids[bssidIndex] = bssids[bssidIndex];
+            }
+            break;
+        }
+    }
+
+    filesystemUsedBytes = SD.usedBytes();
+    return true;
+}
+
 uint8_t StorageService::GetSavedSessionCount()
 {
     return savedSessionCount;
@@ -2224,6 +2661,28 @@ StorageService::GetSavedSiteSurveyPointIndex(
     }
 
     return &savedSiteSurveyPointIndex[index];
+}
+
+uint32_t StorageService::GetNextPhysicalAccessPointId()
+{
+    return nextPhysicalAccessPointId;
+}
+
+uint8_t StorageService::GetSavedPhysicalAccessPointCount()
+{
+    return savedPhysicalAccessPointCount;
+}
+
+const StoredPhysicalAccessPointIndex *
+StorageService::GetSavedPhysicalAccessPointIndex(
+    uint8_t index)
+{
+    if (index >= savedPhysicalAccessPointCount)
+    {
+        return nullptr;
+    }
+
+    return &savedPhysicalAccessPointIndex[index];
 }
 
 const StoredWiFiMeasurementSessionIndex *
@@ -2335,6 +2794,12 @@ bool StorageService::EnsureDirectories()
 
     if (!SD.exists(SurveyPointsDirectory) &&
         !SD.mkdir(SurveyPointsDirectory))
+    {
+        return false;
+    }
+
+    if (!SD.exists(AccessPointsDirectory) &&
+        !SD.mkdir(AccessPointsDirectory))
     {
         return false;
     }
@@ -3567,6 +4032,201 @@ void StorageService::LoadSiteSurveyPointSequence()
             nextSiteSurveyPointId));
 }
 
+void StorageService::LoadPhysicalAccessPointSequence()
+{
+    savedPhysicalAccessPointCount = 0;
+
+    for (uint8_t index = 0;
+         index < MaxSavedPhysicalAccessPoints;
+         ++index)
+    {
+        savedPhysicalAccessPointIndex[index] =
+            StoredPhysicalAccessPointIndex{};
+    }
+
+    uint32_t maximumAccessPointId = 0;
+    File directory = SD.open(AccessPointsDirectory);
+
+    if (!directory || !directory.isDirectory())
+    {
+        Serial.println(
+            "StorageService: Physical AP directory unavailable");
+        return;
+    }
+
+    File entry = directory.openNextFile();
+
+    while (entry)
+    {
+        uint32_t candidateAccessPointId = 0;
+
+        if (!entry.isDirectory())
+        {
+            const char *path = entry.name();
+            const char *name = std::strrchr(path, '/');
+            name = name == nullptr ? path : name + 1;
+
+            constexpr const char Prefix[] = "ap_";
+            constexpr size_t PrefixLength = sizeof(Prefix) - 1;
+
+            if (std::strncmp(name, Prefix, PrefixLength) == 0)
+            {
+                const char *numberStart = name + PrefixLength;
+                char *numberEnd = nullptr;
+                const unsigned long parsed =
+                    std::strtoul(numberStart, &numberEnd, 10);
+
+                if (numberEnd != numberStart &&
+                    parsed != 0 &&
+                    std::strcmp(numberEnd, ".txt") == 0)
+                {
+                    candidateAccessPointId =
+                        static_cast<uint32_t>(parsed);
+
+                    if (candidateAccessPointId > maximumAccessPointId)
+                    {
+                        maximumAccessPointId = candidateAccessPointId;
+                    }
+                }
+            }
+        }
+
+        entry.close();
+
+        if (candidateAccessPointId != 0)
+        {
+            StoredPhysicalAccessPoint accessPoint{};
+
+            if (!ReadPhysicalAccessPointRecord(
+                    candidateAccessPointId,
+                    accessPoint))
+            {
+                Serial.printf(
+                    "StorageService: Physical AP %lu skipped - record invalid\n",
+                    static_cast<unsigned long>(candidateAccessPointId));
+            }
+            else
+            {
+                StoredSiteSurvey parentSurvey{};
+
+                if (!ReadSiteSurveyRecord(
+                        accessPoint.siteSurveyId,
+                        parentSurvey))
+                {
+                    Serial.printf(
+                        "StorageService: Physical AP %lu skipped - "
+                        "parent Site Survey %lu is invalid\n",
+                        static_cast<unsigned long>(accessPoint.accessPointId),
+                        static_cast<unsigned long>(accessPoint.siteSurveyId));
+                }
+                else
+                {
+                    uint32_t indexedFloorPlanId = accessPoint.floorPlanId;
+                    uint16_t indexedMapX = accessPoint.mapX;
+                    uint16_t indexedMapY = accessPoint.mapY;
+
+                    if (accessPoint.floorPlanId != 0)
+                    {
+                        StoredFloorPlan floorPlan{};
+
+                        if (!ReadFloorPlanRecord(
+                                accessPoint.floorPlanId,
+                                floorPlan) ||
+                            floorPlan.siteSurveyId != accessPoint.siteSurveyId ||
+                            !IsSupportedFloorPlanImage(floorPlan.imagePath) ||
+                            !SD.exists(floorPlan.imagePath))
+                        {
+                            Serial.printf(
+                                "StorageService: Physical AP %lu map reference "
+                                "to Floor Plan %lu unavailable; AP retained as "
+                                "unmapped in catalog\n",
+                                static_cast<unsigned long>(accessPoint.accessPointId),
+                                static_cast<unsigned long>(accessPoint.floorPlanId));
+                            indexedFloorPlanId = 0;
+                            indexedMapX = 0;
+                            indexedMapY = 0;
+                        }
+                    }
+
+                    uint8_t insertIndex = 0;
+                    while (insertIndex < savedPhysicalAccessPointCount &&
+                           savedPhysicalAccessPointIndex[insertIndex]
+                                   .accessPointId > accessPoint.accessPointId)
+                    {
+                        ++insertIndex;
+                    }
+
+                    if (insertIndex < MaxSavedPhysicalAccessPoints)
+                    {
+                        const uint8_t moveEnd =
+                            savedPhysicalAccessPointCount <
+                                    MaxSavedPhysicalAccessPoints
+                                ? savedPhysicalAccessPointCount
+                                : MaxSavedPhysicalAccessPoints - 1;
+
+                        for (uint8_t moveIndex = moveEnd;
+                             moveIndex > insertIndex;
+                             --moveIndex)
+                        {
+                            savedPhysicalAccessPointIndex[moveIndex] =
+                                savedPhysicalAccessPointIndex[moveIndex - 1];
+                        }
+
+                        StoredPhysicalAccessPointIndex indexEntry{};
+                        indexEntry.available = true;
+                        indexEntry.accessPointId = accessPoint.accessPointId;
+                        indexEntry.siteSurveyId = accessPoint.siteSurveyId;
+                        indexEntry.floorPlanId = indexedFloorPlanId;
+                        indexEntry.createdEpoch = accessPoint.createdEpoch;
+                        indexEntry.mapX = indexedMapX;
+                        indexEntry.mapY = indexedMapY;
+                        indexEntry.associatedBssidCount =
+                            accessPoint.associatedBssidCount;
+
+                        std::strncpy(
+                            indexEntry.name,
+                            accessPoint.name,
+                            sizeof(indexEntry.name) - 1);
+                        indexEntry.name[sizeof(indexEntry.name) - 1] = '\0';
+
+                        for (uint8_t bssidIndex = 0;
+                             bssidIndex < accessPoint.associatedBssidCount;
+                             ++bssidIndex)
+                        {
+                            indexEntry.associatedBssids[bssidIndex] =
+                                accessPoint.associatedBssids[bssidIndex];
+                        }
+
+                        savedPhysicalAccessPointIndex[insertIndex] = indexEntry;
+
+                        if (savedPhysicalAccessPointCount <
+                            MaxSavedPhysicalAccessPoints)
+                        {
+                            ++savedPhysicalAccessPointCount;
+                        }
+                    }
+                }
+            }
+        }
+
+        entry = directory.openNextFile();
+    }
+
+    directory.close();
+
+    nextPhysicalAccessPointId = maximumAccessPointId + 1;
+    if (nextPhysicalAccessPointId == 0)
+    {
+        nextPhysicalAccessPointId = 1;
+    }
+
+    Serial.printf(
+        "StorageService: Indexed %u saved Physical AP%s; next ID %lu\n",
+        savedPhysicalAccessPointCount,
+        savedPhysicalAccessPointCount == 1 ? "" : "s",
+        static_cast<unsigned long>(nextPhysicalAccessPointId));
+}
+
 bool StorageService::WriteMeasurementSession(
     const StoredWiFiMeasurementSession &session)
 {
@@ -4775,6 +5435,575 @@ bool StorageService::ReadSiteSurveyPointRecord(
         sizeof(point.name) - 1);
 
     point.name[sizeof(point.name) - 1] = '\0';
+
+    return true;
+}
+
+bool StorageService::WritePhysicalAccessPointRecord(
+    const StoredPhysicalAccessPoint &accessPoint,
+    bool replaceExisting)
+{
+    if (accessPoint.accessPointId == 0 ||
+        accessPoint.siteSurveyId == 0 ||
+        accessPoint.name[0] == '\0' ||
+        accessPoint.mapX > StoredPhysicalAccessPoint::MapCoordinateMaximum ||
+        accessPoint.mapY > StoredPhysicalAccessPoint::MapCoordinateMaximum ||
+        (accessPoint.floorPlanId == 0 &&
+         (accessPoint.mapX != 0 || accessPoint.mapY != 0)) ||
+        accessPoint.associatedBssidCount >
+            StoredPhysicalAccessPoint::MaxAssociatedBssids)
+    {
+        return false;
+    }
+
+    for (uint8_t index = 0;
+         index < accessPoint.associatedBssidCount;
+         ++index)
+    {
+        if (IsZeroBssid(accessPoint.associatedBssids[index].bytes))
+        {
+            return false;
+        }
+
+        for (uint8_t compare = 0; compare < index; ++compare)
+        {
+            if (BssidEquals(
+                    accessPoint.associatedBssids[index].bytes,
+                    accessPoint.associatedBssids[compare].bytes))
+            {
+                return false;
+            }
+        }
+    }
+
+    if (SD.exists(TemporaryPhysicalAccessPointPath) &&
+        !SD.remove(TemporaryPhysicalAccessPointPath))
+    {
+        Serial.println(
+            "StorageService: Physical AP save failed - stale temporary "
+            "file could not be removed");
+        return false;
+    }
+
+    File file = SD.open(TemporaryPhysicalAccessPointPath, FILE_WRITE);
+    if (!file)
+    {
+        return false;
+    }
+
+    uint32_t crc = Crc32Initial;
+    char encodedName[StoredPhysicalAccessPoint::NameCapacity * 3] = {};
+
+    bool written =
+        EncodeStorageText(accessPoint.name, encodedName, sizeof(encodedName)) &&
+        WriteCrcLine(
+            file, crc, "version=%u\n",
+            CurrentPhysicalAccessPointFormatVersion) &&
+        WriteCrcLine(
+            file, crc, "ap_id=%lu\n",
+            static_cast<unsigned long>(accessPoint.accessPointId)) &&
+        WriteCrcLine(
+            file, crc, "site_survey_id=%lu\n",
+            static_cast<unsigned long>(accessPoint.siteSurveyId)) &&
+        WriteCrcLine(
+            file, crc, "floor_plan_id=%lu\n",
+            static_cast<unsigned long>(accessPoint.floorPlanId)) &&
+        WriteCrcLine(
+            file, crc, "map_x=%u\n",
+            static_cast<unsigned int>(accessPoint.mapX)) &&
+        WriteCrcLine(
+            file, crc, "map_y=%u\n",
+            static_cast<unsigned int>(accessPoint.mapY)) &&
+        WriteCrcLine(
+            file, crc, "created_epoch=%lu\n",
+            static_cast<unsigned long>(accessPoint.createdEpoch)) &&
+        WriteCrcLine(file, crc, "name=%s\n", encodedName) &&
+        WriteCrcLine(
+            file, crc, "bssid_count=%u\n",
+            static_cast<unsigned int>(accessPoint.associatedBssidCount));
+
+    for (uint8_t index = 0;
+         written && index < accessPoint.associatedBssidCount;
+         ++index)
+    {
+        char bssidText[18] = {};
+        written =
+            FormatBssid(
+                accessPoint.associatedBssids[index].bytes,
+                bssidText,
+                sizeof(bssidText)) &&
+            WriteCrcLine(
+                file,
+                crc,
+                "bssid_%u=%s\n",
+                static_cast<unsigned int>(index),
+                bssidText);
+    }
+
+    bool checksumWritten = false;
+    if (written)
+    {
+        const uint32_t finalCrc = crc ^ 0xFFFFFFFFUL;
+        checksumWritten =
+            file.printf(
+                "checksum_crc32=%08lX\n",
+                static_cast<unsigned long>(finalCrc)) > 0;
+    }
+
+    file.flush();
+    file.close();
+
+    if (!written || !checksumWritten)
+    {
+        SD.remove(TemporaryPhysicalAccessPointPath);
+        return false;
+    }
+
+    char finalPath[64];
+    BuildPhysicalAccessPointPath(
+        accessPoint.accessPointId,
+        finalPath,
+        sizeof(finalPath));
+
+    if (!replaceExisting)
+    {
+        if (SD.exists(finalPath))
+        {
+            SD.remove(TemporaryPhysicalAccessPointPath);
+            return false;
+        }
+
+        if (!SD.rename(TemporaryPhysicalAccessPointPath, finalPath))
+        {
+            SD.remove(TemporaryPhysicalAccessPointPath);
+            return false;
+        }
+
+        return true;
+    }
+
+    if (!SD.exists(finalPath))
+    {
+        SD.remove(TemporaryPhysicalAccessPointPath);
+        return false;
+    }
+
+    char backupPath[64];
+    BuildPhysicalAccessPointBackupPath(
+        accessPoint.accessPointId,
+        backupPath,
+        sizeof(backupPath));
+
+    if (SD.exists(backupPath))
+    {
+        SD.remove(TemporaryPhysicalAccessPointPath);
+        Serial.println(
+            "StorageService: Physical AP update blocked - unresolved "
+            "backup record exists");
+        return false;
+    }
+
+    if (!SD.rename(finalPath, backupPath))
+    {
+        SD.remove(TemporaryPhysicalAccessPointPath);
+        return false;
+    }
+
+    if (!SD.rename(TemporaryPhysicalAccessPointPath, finalPath))
+    {
+        const bool restored = SD.rename(backupPath, finalPath);
+        Serial.printf(
+            "StorageService: Physical AP update failed - original record "
+            "restore %s\n",
+            restored ? "succeeded" : "FAILED");
+        SD.remove(TemporaryPhysicalAccessPointPath);
+        return false;
+    }
+
+    if (!SD.remove(backupPath))
+    {
+        Serial.println(
+            "StorageService: Warning - Physical AP update committed but "
+            "backup cleanup failed");
+    }
+
+    return true;
+}
+
+bool StorageService::RecoverInterruptedPhysicalAccessPointUpdates()
+{
+    bool recoveryOk = true;
+    File directory = SD.open(AccessPointsDirectory);
+
+    if (!directory || !directory.isDirectory())
+    {
+        return false;
+    }
+
+    File entry = directory.openNextFile();
+
+    while (entry)
+    {
+        uint32_t backupAccessPointId = 0;
+
+        if (!entry.isDirectory())
+        {
+            const char *path = entry.name();
+            const char *name = std::strrchr(path, '/');
+            name = name == nullptr ? path : name + 1;
+
+            constexpr const char Prefix[] = "ap_";
+            constexpr size_t PrefixLength = sizeof(Prefix) - 1;
+
+            if (std::strncmp(name, Prefix, PrefixLength) == 0)
+            {
+                const char *numberStart = name + PrefixLength;
+                char *numberEnd = nullptr;
+                const unsigned long parsed =
+                    std::strtoul(numberStart, &numberEnd, 10);
+
+                if (numberEnd != numberStart &&
+                    parsed != 0 &&
+                    std::strcmp(numberEnd, ".bak") == 0)
+                {
+                    backupAccessPointId = static_cast<uint32_t>(parsed);
+                }
+            }
+        }
+
+        entry.close();
+
+        if (backupAccessPointId != 0)
+        {
+            char finalPath[64];
+            char backupPath[64];
+            BuildPhysicalAccessPointPath(
+                backupAccessPointId,
+                finalPath,
+                sizeof(finalPath));
+            BuildPhysicalAccessPointBackupPath(
+                backupAccessPointId,
+                backupPath,
+                sizeof(backupPath));
+
+            if (SD.exists(finalPath))
+            {
+                if (!SD.remove(backupPath))
+                {
+                    recoveryOk = false;
+                }
+            }
+            else if (!SD.rename(backupPath, finalPath))
+            {
+                recoveryOk = false;
+                Serial.printf(
+                    "StorageService: WARNING - Physical AP %lu backup "
+                    "could not be restored\n",
+                    static_cast<unsigned long>(backupAccessPointId));
+            }
+            else
+            {
+                Serial.printf(
+                    "StorageService: Restored Physical AP %lu after "
+                    "interrupted update\n",
+                    static_cast<unsigned long>(backupAccessPointId));
+            }
+        }
+
+        entry = directory.openNextFile();
+    }
+
+    directory.close();
+
+    if (SD.exists(TemporaryPhysicalAccessPointPath))
+    {
+        if (!SD.remove(TemporaryPhysicalAccessPointPath))
+        {
+            recoveryOk = false;
+        }
+        else
+        {
+            Serial.println(
+                "StorageService: Abandoned Physical AP temporary file removed");
+        }
+    }
+
+    return recoveryOk;
+}
+
+bool StorageService::ReadPhysicalAccessPointRecord(
+    uint32_t accessPointId,
+    StoredPhysicalAccessPoint &accessPoint)
+{
+    accessPoint = StoredPhysicalAccessPoint{};
+
+    if (!available || accessPointId == 0)
+    {
+        return false;
+    }
+
+    char path[64];
+    BuildPhysicalAccessPointPath(accessPointId, path, sizeof(path));
+
+    File file = SD.open(path, FILE_READ);
+    if (!file)
+    {
+        return false;
+    }
+
+    uint32_t version = 0;
+    uint32_t storedAccessPointId = 0;
+    uint32_t siteSurveyId = 0;
+    uint32_t floorPlanId = 0;
+    uint32_t mapX = 0;
+    uint32_t mapY = 0;
+    uint32_t createdEpoch = 0;
+    uint32_t bssidCount = 0;
+    uint32_t storedChecksum = 0;
+    uint32_t calculatedCrc = Crc32Initial;
+
+    char decodedName[StoredPhysicalAccessPoint::NameCapacity] = {};
+    StoredPhysicalAccessPointBssid
+        parsedBssids[StoredPhysicalAccessPoint::MaxAssociatedBssids] = {};
+    bool bssidSeen[StoredPhysicalAccessPoint::MaxAssociatedBssids] = {};
+
+    bool versionSeen = false;
+    bool accessPointIdSeen = false;
+    bool siteSurveyIdSeen = false;
+    bool floorPlanIdSeen = false;
+    bool mapXSeen = false;
+    bool mapYSeen = false;
+    bool createdEpochSeen = false;
+    bool nameSeen = false;
+    bool bssidCountSeen = false;
+    bool checksumSeen = false;
+    bool valid = true;
+
+    while (file.available() && valid)
+    {
+        const String rawLine = file.readStringUntil('\n');
+        String line = rawLine;
+        line.trim();
+
+        if (line.startsWith("checksum_crc32="))
+        {
+            if (checksumSeen ||
+                !ParseHexUnsigned(line.substring(15), storedChecksum))
+            {
+                valid = false;
+                break;
+            }
+
+            checksumSeen = true;
+            continue;
+        }
+
+        if (checksumSeen)
+        {
+            if (line.length() != 0)
+            {
+                valid = false;
+            }
+            continue;
+        }
+
+        calculatedCrc = UpdateCrc32(calculatedCrc, rawLine);
+        const uint8_t newline = '\n';
+        calculatedCrc = UpdateCrc32(calculatedCrc, &newline, 1);
+
+        if (line.length() == 0)
+        {
+            continue;
+        }
+
+        const int separator = line.indexOf('=');
+        if (separator <= 0)
+        {
+            valid = false;
+            break;
+        }
+
+        const String key = line.substring(0, separator);
+        const String value = line.substring(separator + 1);
+
+        if (key == "version")
+        {
+            if (versionSeen || !ParseUnsigned(value, version))
+            {
+                valid = false;
+            }
+            versionSeen = true;
+        }
+        else if (key == "ap_id")
+        {
+            if (accessPointIdSeen ||
+                !ParseUnsigned(value, storedAccessPointId))
+            {
+                valid = false;
+            }
+            accessPointIdSeen = true;
+        }
+        else if (key == "site_survey_id")
+        {
+            if (siteSurveyIdSeen || !ParseUnsigned(value, siteSurveyId))
+            {
+                valid = false;
+            }
+            siteSurveyIdSeen = true;
+        }
+        else if (key == "floor_plan_id")
+        {
+            if (floorPlanIdSeen || !ParseUnsigned(value, floorPlanId))
+            {
+                valid = false;
+            }
+            floorPlanIdSeen = true;
+        }
+        else if (key == "map_x")
+        {
+            if (mapXSeen || !ParseUnsigned(value, mapX))
+            {
+                valid = false;
+            }
+            mapXSeen = true;
+        }
+        else if (key == "map_y")
+        {
+            if (mapYSeen || !ParseUnsigned(value, mapY))
+            {
+                valid = false;
+            }
+            mapYSeen = true;
+        }
+        else if (key == "created_epoch")
+        {
+            if (createdEpochSeen || !ParseUnsigned(value, createdEpoch))
+            {
+                valid = false;
+            }
+            createdEpochSeen = true;
+        }
+        else if (key == "name")
+        {
+            if (nameSeen ||
+                !DecodeStorageText(value, decodedName, sizeof(decodedName)))
+            {
+                valid = false;
+            }
+            nameSeen = true;
+        }
+        else if (key == "bssid_count")
+        {
+            if (bssidCountSeen || !ParseUnsigned(value, bssidCount) ||
+                bssidCount > StoredPhysicalAccessPoint::MaxAssociatedBssids)
+            {
+                valid = false;
+            }
+            bssidCountSeen = true;
+        }
+        else if (key.startsWith("bssid_"))
+        {
+            uint32_t bssidIndex = 0;
+            if (!ParseUnsigned(key.substring(6), bssidIndex) ||
+                bssidIndex >= StoredPhysicalAccessPoint::MaxAssociatedBssids ||
+                bssidSeen[bssidIndex] ||
+                !ParseBssid(value, parsedBssids[bssidIndex].bytes) ||
+                IsZeroBssid(parsedBssids[bssidIndex].bytes))
+            {
+                valid = false;
+            }
+            else
+            {
+                bssidSeen[bssidIndex] = true;
+            }
+        }
+        else
+        {
+            valid = false;
+        }
+    }
+
+    file.close();
+
+    const uint32_t finalCrc = calculatedCrc ^ 0xFFFFFFFFUL;
+
+    bool complete =
+        valid &&
+        versionSeen &&
+        accessPointIdSeen &&
+        siteSurveyIdSeen &&
+        floorPlanIdSeen &&
+        mapXSeen &&
+        mapYSeen &&
+        createdEpochSeen &&
+        nameSeen &&
+        bssidCountSeen &&
+        checksumSeen;
+
+    if (complete)
+    {
+        for (uint8_t index = 0;
+             index < StoredPhysicalAccessPoint::MaxAssociatedBssids;
+             ++index)
+        {
+            if ((index < bssidCount) != bssidSeen[index])
+            {
+                complete = false;
+                break;
+            }
+        }
+    }
+
+    if (complete)
+    {
+        for (uint8_t index = 0; index < bssidCount; ++index)
+        {
+            for (uint8_t compare = 0; compare < index; ++compare)
+            {
+                if (BssidEquals(
+                        parsedBssids[index].bytes,
+                        parsedBssids[compare].bytes))
+                {
+                    complete = false;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!complete ||
+        version != CurrentPhysicalAccessPointFormatVersion ||
+        storedAccessPointId != accessPointId ||
+        siteSurveyId == 0 ||
+        mapX > StoredPhysicalAccessPoint::MapCoordinateMaximum ||
+        mapY > StoredPhysicalAccessPoint::MapCoordinateMaximum ||
+        (floorPlanId == 0 && (mapX != 0 || mapY != 0)) ||
+        decodedName[0] == '\0' ||
+        storedChecksum != finalCrc)
+    {
+        return false;
+    }
+
+    accessPoint.available = true;
+    accessPoint.formatVersion = static_cast<uint8_t>(version);
+    accessPoint.accessPointId = storedAccessPointId;
+    accessPoint.siteSurveyId = siteSurveyId;
+    accessPoint.floorPlanId = floorPlanId;
+    accessPoint.createdEpoch = createdEpoch;
+    accessPoint.mapX = static_cast<uint16_t>(mapX);
+    accessPoint.mapY = static_cast<uint16_t>(mapY);
+    accessPoint.associatedBssidCount = static_cast<uint8_t>(bssidCount);
+
+    std::strncpy(
+        accessPoint.name,
+        decodedName,
+        sizeof(accessPoint.name) - 1);
+    accessPoint.name[sizeof(accessPoint.name) - 1] = '\0';
+
+    for (uint8_t index = 0; index < accessPoint.associatedBssidCount; ++index)
+    {
+        accessPoint.associatedBssids[index] = parsedBssids[index];
+    }
 
     return true;
 }
@@ -6880,6 +8109,42 @@ void StorageService::BuildSiteSurveyPointBackupPath(
         "%s/point_%06lu.bak",
         SurveyPointsDirectory,
         static_cast<unsigned long>(pointId));
+}
+
+void StorageService::BuildPhysicalAccessPointPath(
+    uint32_t accessPointId,
+    char *buffer,
+    size_t bufferSize)
+{
+    if (buffer == nullptr || bufferSize == 0)
+    {
+        return;
+    }
+
+    std::snprintf(
+        buffer,
+        bufferSize,
+        "%s/ap_%06lu.txt",
+        AccessPointsDirectory,
+        static_cast<unsigned long>(accessPointId));
+}
+
+void StorageService::BuildPhysicalAccessPointBackupPath(
+    uint32_t accessPointId,
+    char *buffer,
+    size_t bufferSize)
+{
+    if (buffer == nullptr || bufferSize == 0)
+    {
+        return;
+    }
+
+    std::snprintf(
+        buffer,
+        bufferSize,
+        "%s/ap_%06lu.bak",
+        AccessPointsDirectory,
+        static_cast<unsigned long>(accessPointId));
 }
 
 void StorageService::InsertSavedSessionIndex(

@@ -124,6 +124,43 @@ public:
         uint16_t mapX,
         uint16_t mapY);
 
+    // Physical AP inventory is distinct from Survey Points: an AP
+    // describes infrastructure location, while a Survey Point describes
+    // where the technician stood to capture RF measurements.
+    static constexpr uint8_t MaxSavedPhysicalAccessPoints = 64;
+
+    static uint8_t GetSavedPhysicalAccessPointCount();
+
+    static const StoredPhysicalAccessPointIndex *
+        GetSavedPhysicalAccessPointIndex(uint8_t index);
+
+    static uint32_t GetNextPhysicalAccessPointId();
+
+    static bool CreatePhysicalAccessPointRecord(
+        uint32_t siteSurveyId,
+        const char *name,
+        uint32_t createdEpoch,
+        uint32_t &accessPointId);
+
+    static bool LoadPhysicalAccessPoint(
+        uint32_t accessPointId,
+        StoredPhysicalAccessPoint &accessPoint);
+
+    // floorPlanId == 0 clears the AP map position and requires both
+    // normalized coordinates to be zero.
+    static bool SetPhysicalAccessPointMapPosition(
+        uint32_t accessPointId,
+        uint32_t floorPlanId,
+        uint16_t mapX,
+        uint16_t mapY);
+
+    // Replaces the complete BSSID association set for one physical AP.
+    // Passing bssidCount == 0 clears all radio/BSSID associations.
+    static bool SetPhysicalAccessPointBssids(
+        uint32_t accessPointId,
+        const StoredPhysicalAccessPointBssid *bssids,
+        uint8_t bssidCount);
+
     static bool SaveMeasurementSummary(
         const WiFiMeasurementSummary &summary,
         uint32_t completedAtMs,
@@ -216,9 +253,18 @@ private:
 
     static uint8_t savedSiteSurveyPointCount;
 
+    static uint32_t nextPhysicalAccessPointId;
+
+    static StoredPhysicalAccessPointIndex
+        savedPhysicalAccessPointIndex[
+            MaxSavedPhysicalAccessPoints];
+
+    static uint8_t savedPhysicalAccessPointCount;
+
     static void LoadSiteSurveySequence();
     static void LoadFloorPlanSequence();
     static void LoadSiteSurveyPointSequence();
+    static void LoadPhysicalAccessPointSequence();
 
     static bool EnsureDirectories();
     static bool CleanupStaleTemporaryFile();
@@ -349,6 +395,29 @@ private:
 
     static void BuildSiteSurveyPointBackupPath(
         uint32_t pointId,
+        char *buffer,
+        size_t bufferSize);
+
+    static constexpr uint8_t
+        CurrentPhysicalAccessPointFormatVersion = 1;
+
+    static bool WritePhysicalAccessPointRecord(
+        const StoredPhysicalAccessPoint &accessPoint,
+        bool replaceExisting = false);
+
+    static bool RecoverInterruptedPhysicalAccessPointUpdates();
+
+    static bool ReadPhysicalAccessPointRecord(
+        uint32_t accessPointId,
+        StoredPhysicalAccessPoint &accessPoint);
+
+    static void BuildPhysicalAccessPointPath(
+        uint32_t accessPointId,
+        char *buffer,
+        size_t bufferSize);
+
+    static void BuildPhysicalAccessPointBackupPath(
+        uint32_t accessPointId,
         char *buffer,
         size_t bufferSize);
 
