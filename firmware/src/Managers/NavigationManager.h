@@ -23,6 +23,13 @@ public:
 
     void Update();
 
+    // Modal UI workflows can temporarily suppress raw horizontal swipe
+    // navigation. This is required for interactive Floor Plan panning,
+    // where the same physical gesture must move the map rather than the
+    // application page underneath it.
+    static void SetGestureNavigationEnabled(bool enabled);
+    static bool IsGestureNavigationEnabled();
+
     ScreenID Current() const
     {
         return current;
@@ -40,4 +47,5 @@ private:
     ScreenID current = ScreenID::Dashboard;
     static void HandleMessage(const Message &message);
     static NavigationManager *instance;
+    static bool gestureNavigationEnabled;
 };

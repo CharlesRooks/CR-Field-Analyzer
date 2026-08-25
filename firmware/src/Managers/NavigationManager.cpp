@@ -4,11 +4,13 @@
 #include <Arduino.h>
 
 NavigationManager *NavigationManager::instance = nullptr;
+bool NavigationManager::gestureNavigationEnabled = true;
 
 void NavigationManager::Begin(lv_obj_t *area)
 {
     contentArea = area;
     instance = this;
+    gestureNavigationEnabled = true;
 
     if (!MessageBus::Subscribe(
         MessageType::InputEvent,
@@ -101,6 +103,16 @@ void NavigationManager::Update()
     }
 }
 
+void NavigationManager::SetGestureNavigationEnabled(bool enabled)
+{
+    gestureNavigationEnabled = enabled;
+}
+
+bool NavigationManager::IsGestureNavigationEnabled()
+{
+    return gestureNavigationEnabled;
+}
+
 void NavigationManager::HandleMessage(const Message &message)
 {
     if (instance == nullptr ||
@@ -113,6 +125,15 @@ void NavigationManager::HandleMessage(const Message &message)
     // to the host. This prevents navigation into views that may read
     // storage while USB Mass Storage is active.
     if (UsbStorageService::IsActive())
+    {
+        return;
+    }
+
+    // Measurement Setup and other modal workflows can explicitly block
+    // left/right page swipes. Floor Plan placement uses horizontal drag
+    // gestures, and allowing those gestures to reach NavigationManager
+    // would silently change the page underneath the modal overlay.
+    if (!gestureNavigationEnabled)
     {
         return;
     }

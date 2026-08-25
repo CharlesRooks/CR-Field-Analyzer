@@ -104,6 +104,44 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 * Completed sessions retain their assigned Survey Point after the working label is cleared.
 * After a completed measurement, the Scan screen correctly returns to `Point: Set survey location` for the next survey point.
 
+### Milestone 10.24F — Existing Survey Point Markers
+
+#### Added
+- Added persistent Survey Point markers to the Floor Plan viewer.
+- Added marker positioning from stored normalized 0–10000 Floor Plan coordinates.
+- Added Survey Point ID labels for mapped Points.
+- Added enhanced highlighting for the currently selected saved Survey Point.
+- Added selected Survey Point name display.
+- Added automatic suppression of non-selected Point labels on dense Floor Plans.
+- Added navigation control to suspend global page-swipe gestures while Measurement Setup is active.
+
+#### Changed
+- Only Survey Points belonging to the active Site Survey and opened Floor Plan are rendered.
+- Survey Point markers move with the Floor Plan during crosshair placement.
+- The fixed placement crosshair and coordinate display remain above Survey Point markers.
+- Marker labels now use the SentinelOS configured LVGL font instead of requiring an additional Montserrat font.
+- Global left/right page navigation is temporarily disabled while Measurement Setup is open.
+- Global page navigation is restored when Measurement Setup closes.
+
+#### Hardened
+- Floor Plan dragging can no longer trigger hidden application page navigation beneath Measurement Setup.
+- Starting a Wi-Fi measurement after Floor Plan placement now returns to the Wi-Fi Scan screen as intended.
+- Survey Points belonging to other Site Surveys or Floor Plans are excluded from the active map overlay.
+- Marker positions remain derived from persistent Survey Point coordinates after reopening and reboot.
+
+#### Verified
+- Firmware compiled successfully.
+- Existing mapped Survey Points rendered successfully on the Floor Plan.
+- Survey Points from other Floor Plans and Site Surveys were excluded.
+- The selected saved Survey Point was visually distinct from other markers.
+- Survey Point markers moved correctly with the Floor Plan during placement.
+- The fixed crosshair remained above the marker layer.
+- Moving and saving a Survey Point updated its displayed marker position.
+- Marker positions remained correct after reopening the Floor Plan.
+- Marker positions remained correct after reboot.
+- Floor Plan dragging did not trigger hidden page navigation.
+- Starting a measurement after Floor Plan placement returned correctly to the Wi-Fi Scan screen.
+- Wi-Fi measurement execution continued normally after Floor Plan placement.
 
 ### Milestone 10.24E — Crosshair Survey Point Placement
 

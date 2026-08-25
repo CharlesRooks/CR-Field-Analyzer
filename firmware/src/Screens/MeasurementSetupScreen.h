@@ -3,6 +3,8 @@
 #include <stdint.h>
 #include <lvgl.h>
 
+struct StoredSiteSurveyPointIndex;
+
 enum class MeasurementSetupAction : uint8_t
 {
     SingleScan = 0,
@@ -168,6 +170,14 @@ private:
         uint16_t &mapY) const;
 
     void UpdateFloorPlanPlacementStatus();
+
+    void RenderFloorPlanPointMarkers(
+        uint32_t siteSurveyId);
+
+    void CreateFloorPlanPointMarker(
+        const StoredSiteSurveyPointIndex &point,
+        bool selected,
+        bool showLabel);
 
     void ClearPendingMapPosition();
 

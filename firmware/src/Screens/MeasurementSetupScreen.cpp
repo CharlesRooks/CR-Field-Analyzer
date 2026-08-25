@@ -6,6 +6,7 @@
 
 #include "../Services/Survey/SiteSurveyService.h"
 #include "../Managers/SiteSurveyManager.h"
+#include "../Managers/NavigationManager.h"
 #include "../Services/Storage/StorageService.h"
 #include "../Services/Imaging/FloorPlanImageRenderer.h"
 #include "../Services/Time/TimeService.h"
@@ -22,6 +23,10 @@ void MeasurementSetupScreen::Show(
 
     if (root != nullptr)
     {
+        // Measurement Setup is modal. Keep page-swipe navigation locked
+        // while it is visible so Floor Plan dragging cannot change the
+        // page underneath the overlay.
+        NavigationManager::SetGestureNavigationEnabled(false);
         return;
     }
 
@@ -41,6 +46,13 @@ void MeasurementSetupScreen::Show(
 
     root =
         lv_obj_create(parent);
+
+    // Measurement Setup is a modal workflow. Raw horizontal touch
+    // gestures are also observed by InputManager for page navigation;
+    // suppress those gestures while this overlay is active so panning a
+    // Floor Plan cannot silently navigate the underlying page away from
+    // Wi-Fi Scan.
+    NavigationManager::SetGestureNavigationEnabled(false);
 
     lv_obj_set_pos(
         root,
@@ -2198,6 +2210,12 @@ void MeasurementSetupScreen::OpenFloorPlanViewer(
         floorPlanRenderedOffsetY =
             renderInfo.offsetY;
 
+        // Render every persistent Survey Point mapped to this Floor Plan.
+        // Markers are children of the canvas so they automatically follow
+        // the Floor Plan while it is panned beneath the fixed crosshair.
+        RenderFloorPlanPointMarkers(
+            surveyId);
+
         lv_obj_add_flag(
             floorPlanCanvas,
             LV_OBJ_FLAG_CLICKABLE);
@@ -2943,6 +2961,339 @@ void MeasurementSetupScreen::UpdateFloorPlanPlacementStatus()
         status);
 }
 
+void MeasurementSetupScreen::RenderFloorPlanPointMarkers(
+    uint32_t siteSurveyId)
+{
+    if (floorPlanCanvas == nullptr ||
+        floorPlanViewerFloorPlanId == 0 ||
+        siteSurveyId == 0 ||
+        floorPlanRenderedWidth == 0 ||
+        floorPlanRenderedHeight == 0)
+    {
+        return;
+    }
+
+    const uint8_t count =
+        StorageService::GetSavedSiteSurveyPointCount();
+
+    uint16_t mappedPointCount = 0;
+
+    for (uint8_t index = 0;
+         index < count;
+         ++index)
+    {
+        const StoredSiteSurveyPointIndex *point =
+            StorageService::GetSavedSiteSurveyPointIndex(index);
+
+        if (point != nullptr &&
+            point->available &&
+            point->siteSurveyId == siteSurveyId &&
+            point->floorPlanId == floorPlanViewerFloorPlanId &&
+            point->mapX <= StoredSiteSurveyPoint::MapCoordinateMaximum &&
+            point->mapY <= StoredSiteSurveyPoint::MapCoordinateMaximum)
+        {
+            ++mappedPointCount;
+        }
+    }
+
+    // Labels are useful on a sparse plan, but become visual noise on a
+    // dense survey. Keep all dots visible and suppress non-selected labels
+    // once the Floor Plan contains more than twelve mapped Points.
+    const bool showAllLabels =
+        mappedPointCount <= 12U;
+
+    // Draw ordinary Points first so the currently selected Point is always
+    // visually on top when two markers overlap.
+    for (uint8_t pass = 0;
+         pass < 2;
+         ++pass)
+    {
+        const bool selectedPass =
+            pass == 1;
+
+        for (uint8_t index = 0;
+             index < count;
+             ++index)
+        {
+            const StoredSiteSurveyPointIndex *point =
+                StorageService::GetSavedSiteSurveyPointIndex(index);
+
+            if (point == nullptr ||
+                !point->available ||
+                point->siteSurveyId != siteSurveyId ||
+                point->floorPlanId != floorPlanViewerFloorPlanId ||
+                point->mapX > StoredSiteSurveyPoint::MapCoordinateMaximum ||
+                point->mapY > StoredSiteSurveyPoint::MapCoordinateMaximum)
+            {
+                continue;
+            }
+
+            const bool selected =
+                point->pointId != 0 &&
+                point->pointId == selectedSavedPointId;
+
+            if (selected != selectedPass)
+            {
+                continue;
+            }
+
+            CreateFloorPlanPointMarker(
+                *point,
+                selected,
+                showAllLabels || selected);
+        }
+    }
+
+    Serial.printf(
+        "MeasurementSetupScreen: Floor Plan %lu rendered %u Survey Point marker(s)\n",
+        static_cast<unsigned long>(
+            floorPlanViewerFloorPlanId),
+        static_cast<unsigned int>(
+            mappedPointCount));
+}
+
+void MeasurementSetupScreen::CreateFloorPlanPointMarker(
+    const StoredSiteSurveyPointIndex &point,
+    bool selected,
+    bool showLabel)
+{
+    if (floorPlanCanvas == nullptr ||
+        floorPlanRenderedWidth == 0 ||
+        floorPlanRenderedHeight == 0)
+    {
+        return;
+    }
+
+    uint32_t renderedX = 0;
+    uint32_t renderedY = 0;
+
+    if (floorPlanRenderedWidth > 1)
+    {
+        renderedX =
+            (static_cast<uint32_t>(point.mapX) *
+                 (floorPlanRenderedWidth - 1U) +
+             StoredSiteSurveyPoint::MapCoordinateMaximum / 2U) /
+            StoredSiteSurveyPoint::MapCoordinateMaximum;
+    }
+
+    if (floorPlanRenderedHeight > 1)
+    {
+        renderedY =
+            (static_cast<uint32_t>(point.mapY) *
+                 (floorPlanRenderedHeight - 1U) +
+             StoredSiteSurveyPoint::MapCoordinateMaximum / 2U) /
+            StoredSiteSurveyPoint::MapCoordinateMaximum;
+    }
+
+    const int32_t pointX =
+        static_cast<int32_t>(floorPlanRenderedOffsetX) +
+        static_cast<int32_t>(renderedX);
+
+    const int32_t pointY =
+        static_cast<int32_t>(floorPlanRenderedOffsetY) +
+        static_cast<int32_t>(renderedY);
+
+    const lv_coord_t markerSize =
+        selected ? 15 : 11;
+
+    lv_obj_t *marker =
+        lv_obj_create(floorPlanCanvas);
+
+    lv_obj_remove_style_all(marker);
+
+    lv_obj_set_size(
+        marker,
+        markerSize,
+        markerSize);
+
+    lv_obj_set_pos(
+        marker,
+        static_cast<lv_coord_t>(
+            pointX - markerSize / 2),
+        static_cast<lv_coord_t>(
+            pointY - markerSize / 2));
+
+    // Dual-tone markers remain visible over both light architectural
+    // drawings and dark scanned plans. The selected Point uses a larger
+    // red center so its identity is obvious without changing map geometry.
+    lv_obj_set_style_radius(
+        marker,
+        LV_RADIUS_CIRCLE,
+        0);
+
+    lv_obj_set_style_bg_color(
+        marker,
+        selected
+            ? lv_color_make(220, 32, 32)
+            : lv_color_make(255, 255, 255),
+        0);
+
+    lv_obj_set_style_bg_opa(
+        marker,
+        LV_OPA_COVER,
+        0);
+
+    lv_obj_set_style_border_width(
+        marker,
+        2,
+        0);
+
+    lv_obj_set_style_border_color(
+        marker,
+        lv_color_make(0, 0, 0),
+        0);
+
+    lv_obj_set_style_border_opa(
+        marker,
+        LV_OPA_COVER,
+        0);
+
+    lv_obj_clear_flag(
+        marker,
+        LV_OBJ_FLAG_CLICKABLE);
+
+    lv_obj_clear_flag(
+        marker,
+        LV_OBJ_FLAG_SCROLLABLE);
+
+    if (!showLabel)
+    {
+        return;
+    }
+
+    lv_obj_t *label =
+        lv_label_create(floorPlanCanvas);
+
+    const lv_coord_t labelWidth =
+        selected ? 112 : 38;
+
+    lv_obj_set_width(
+        label,
+        labelWidth);
+
+    lv_label_set_long_mode(
+        label,
+        LV_LABEL_LONG_DOT);
+
+    char labelText[96] = {};
+
+    if (selected &&
+        point.name[0] != '\0')
+    {
+        std::snprintf(
+            labelText,
+            sizeof(labelText),
+            "P%lu %s",
+            static_cast<unsigned long>(point.pointId),
+            point.name);
+    }
+    else
+    {
+        std::snprintf(
+            labelText,
+            sizeof(labelText),
+            "P%lu",
+            static_cast<unsigned long>(point.pointId));
+    }
+
+    lv_label_set_text(
+        label,
+        labelText);
+
+    lv_obj_set_style_text_font(
+        label,
+        LV_FONT_DEFAULT,
+        0);
+
+    lv_obj_set_style_text_color(
+        label,
+        lv_color_make(255, 255, 255),
+        0);
+
+    lv_obj_set_style_bg_color(
+        label,
+        lv_color_make(0, 0, 0),
+        0);
+
+    lv_obj_set_style_bg_opa(
+        label,
+        LV_OPA_70,
+        0);
+
+    lv_obj_set_style_pad_left(
+        label,
+        2,
+        0);
+
+    lv_obj_set_style_pad_right(
+        label,
+        2,
+        0);
+
+    lv_obj_set_style_pad_top(
+        label,
+        1,
+        0);
+
+    lv_obj_set_style_pad_bottom(
+        label,
+        1,
+        0);
+
+    lv_obj_set_style_radius(
+        label,
+        2,
+        0);
+
+    lv_obj_clear_flag(
+        label,
+        LV_OBJ_FLAG_CLICKABLE);
+
+    lv_obj_clear_flag(
+        label,
+        LV_OBJ_FLAG_SCROLLABLE);
+
+    // Prefer the label to the right of the marker. Flip it left near the
+    // viewport edge so the Point ID/name remains readable.
+    int32_t labelX =
+        pointX + markerSize / 2 + 3;
+
+    if (labelX + labelWidth >
+        static_cast<int32_t>(floorPlanViewportWidth))
+    {
+        labelX =
+            pointX - markerSize / 2 - 3 - labelWidth;
+    }
+
+    if (labelX < 0)
+    {
+        labelX = 0;
+    }
+
+    int32_t labelY =
+        pointY - 7;
+
+    const int32_t estimatedLabelHeight = 14;
+
+    if (labelY + estimatedLabelHeight >
+        static_cast<int32_t>(floorPlanViewportHeight))
+    {
+        labelY =
+            static_cast<int32_t>(floorPlanViewportHeight) -
+            estimatedLabelHeight;
+    }
+
+    if (labelY < 0)
+    {
+        labelY = 0;
+    }
+
+    lv_obj_set_pos(
+        label,
+        static_cast<lv_coord_t>(labelX),
+        static_cast<lv_coord_t>(labelY));
+}
+
 void MeasurementSetupScreen::ClearPendingMapPosition()
 {
     pendingMapPositionValid = false;
@@ -3432,6 +3783,10 @@ void MeasurementSetupScreen::CloseTextEditor(
     editorTextArea = nullptr;
     editorKeyboard = nullptr;
     editorTarget = nullptr;
+
+    // Return normal left/right page navigation only after the modal
+    // Measurement Setup workflow has fully closed.
+    NavigationManager::SetGestureNavigationEnabled(true);
 }
 
 void MeasurementSetupScreen::HandleKeyboardEvent(
@@ -3462,6 +3817,7 @@ void MeasurementSetupScreen::Hide()
 {
     if (root == nullptr)
     {
+        NavigationManager::SetGestureNavigationEnabled(true);
         return;
     }
 
