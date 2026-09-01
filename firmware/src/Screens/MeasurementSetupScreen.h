@@ -35,6 +35,7 @@ private:
 
     lv_obj_t *selectSavedSurveyButton = nullptr;
     lv_obj_t *floorPlansButton = nullptr;
+    lv_obj_t *apInventoryButton = nullptr;
     lv_obj_t *selectSavedPointButton = nullptr;
     lv_obj_t *closeSurveyButton = nullptr;
     lv_obj_t *cancelButton = nullptr;
@@ -52,6 +53,32 @@ private:
     lv_obj_t *floorPlanCrosshairRoot = nullptr;
     lv_obj_t *floorPlanPlacementStatusLabel = nullptr;
     lv_obj_t *pointSelectorRoot = nullptr;
+
+    // Physical AP Inventory is a Site Survey-scoped workflow. APs are
+    // intentionally independent from Survey Points: APs describe installed
+    // infrastructure, while Survey Points describe measurement locations.
+    lv_obj_t *apInventoryRoot = nullptr;
+    lv_obj_t *apInventoryList = nullptr;
+    lv_obj_t *apEditorRoot = nullptr;
+    lv_obj_t *apNameTextArea = nullptr;
+    lv_obj_t *apBssidList = nullptr;
+    lv_obj_t *apEditorStatusLabel = nullptr;
+
+    uint32_t apInventorySurveyId = 0;
+    uint32_t apEditorAccessPointId = 0;
+
+    static constexpr uint8_t MaxApNetworkSelections = 64;
+    static constexpr uint8_t MaxApBssids = 8;
+    static constexpr uint8_t BssidLength = 6;
+
+    bool apNetworkSelected[MaxApNetworkSelections] = {};
+    uint8_t apSelectedNetworkCount = 0;
+
+    // Existing AP BSSIDs that are not present in the current Wi-Fi scan are
+    // preserved automatically so editing visible radios cannot silently
+    // discard an out-of-range or temporarily hidden radio.
+    uint8_t apUnseenBssidCount = 0;
+    uint8_t apUnseenBssids[MaxApBssids][BssidLength] = {};
 
     uint32_t floorPlanViewerFloorPlanId = 0;
     uint16_t floorPlanViewportWidth = 0;
@@ -100,6 +127,27 @@ private:
         lv_event_t *event);
 
     static void HandleFloorPlansButton(
+        lv_event_t *event);
+
+    static void HandleApInventoryButton(
+        lv_event_t *event);
+
+    static void HandleApInventoryClose(
+        lv_event_t *event);
+
+    static void HandleNewApButton(
+        lv_event_t *event);
+
+    static void HandleSavedApButton(
+        lv_event_t *event);
+
+    static void HandleApEditorCancel(
+        lv_event_t *event);
+
+    static void HandleApBssidCheckbox(
+        lv_event_t *event);
+
+    static void HandleApSaveButton(
         lv_event_t *event);
 
     static void HandleFloorPlanImportButton(
@@ -182,6 +230,27 @@ private:
     void ClearPendingMapPosition();
 
     void RefreshFloorPlanButtonState();
+
+    void RefreshApInventoryButtonState();
+
+    void OpenApInventory();
+
+    void CloseApInventory();
+
+    void RebuildApInventoryList();
+
+    void OpenApEditor(
+        uint32_t accessPointId);
+
+    void CloseApEditor();
+
+    void BuildApBssidList();
+
+    void SetApEditorStatus(
+        const char *text);
+
+    bool IsBssidSelectedForEditor(
+        const uint8_t *bssid) const;
 
     void OpenPointSelector();
 

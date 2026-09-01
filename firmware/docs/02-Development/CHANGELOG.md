@@ -105,6 +105,46 @@ All notable changes to SentinelOS / CR Field Analyzer will be documented here.
 * After a completed measurement, the Scan screen correctly returns to `Point: Set survey location` for the next survey point.
 
 
+### Milestone 10.25B — Physical AP Inventory UI & Creation
+
+#### Added
+- Added Physical AP Inventory access from Measurement Setup.
+- Added persistent Physical AP catalog filtered to the active Site Survey.
+- Added Physical AP creation workflow.
+- Added automatic default AP naming using `AP-01`, `AP-02`, and subsequent available identifiers.
+- Added BSSID/radio selection from the latest Wi-Fi scan.
+- Added display of SSID, channel, RSSI, and BSSID for available radios.
+- Added support for associating up to eight BSSIDs with one Physical AP.
+- Added editing of existing Physical AP radio associations.
+
+#### Changed
+- Physical AP records can now be created and maintained directly from the field interface.
+- AP Inventory remains scoped to the selected persistent Site Survey.
+- Existing BSSID associations that are temporarily absent from the current Wi-Fi scan are preserved when editing an AP.
+
+#### Hardened
+- BSSIDs already assigned to another Physical AP in the same Site Survey cannot be assigned again.
+- Physical AP editing preserves persistent AP identity and existing associations.
+- Physical AP inventory remains independent from Survey Point measurement-location records.
+- AP creation does not require Floor Plan assignment.
+
+#### Verified
+- Firmware compiled successfully.
+- Firmware flashed and booted successfully on hardware.
+- Physical AP Inventory opened successfully from Measurement Setup.
+- New Physical AP records were created successfully.
+- Automatic AP naming operated correctly.
+- Multiple BSSIDs could be associated with a Physical AP.
+- Saved BSSID associations were restored when reopening an AP.
+- Duplicate BSSID assignment to another AP in the same Site Survey was prevented.
+- Multiple Physical AP records could coexist within the same Site Survey.
+- Physical AP records persisted correctly after reboot.
+- Existing Site Survey functionality remained operational.
+- Existing Survey Point functionality remained operational.
+- Existing Floor Plan viewer and placement functionality remained operational.
+- Existing Wi-Fi scanning and History functionality remained operational.
+- Global page navigation remained functional after AP Inventory workflows.
+
 ### Milestone 10.25A — Physical AP Inventory Storage Foundation
 
 #### Added

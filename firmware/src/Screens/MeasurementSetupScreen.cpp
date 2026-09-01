@@ -14,6 +14,96 @@
 
 static MeasurementSetupScreen *instance = nullptr;
 
+namespace
+{
+    bool BssidEquals(
+        const uint8_t *left,
+        const uint8_t *right)
+    {
+        if (left == nullptr || right == nullptr)
+        {
+            return false;
+        }
+
+        return std::memcmp(
+                   left,
+                   right,
+                   WiFiNetworkInfo::BssidLength) == 0;
+    }
+
+    void FormatBssid(
+        const uint8_t *bssid,
+        char *buffer,
+        size_t bufferSize)
+    {
+        if (buffer == nullptr || bufferSize == 0)
+        {
+            return;
+        }
+
+        buffer[0] = '\0';
+
+        if (bssid == nullptr)
+        {
+            return;
+        }
+
+        std::snprintf(
+            buffer,
+            bufferSize,
+            "%02X:%02X:%02X:%02X:%02X:%02X",
+            bssid[0],
+            bssid[1],
+            bssid[2],
+            bssid[3],
+            bssid[4],
+            bssid[5]);
+    }
+
+    const StoredPhysicalAccessPointIndex *
+    FindPhysicalApBssidOwner(
+        uint32_t siteSurveyId,
+        const uint8_t *bssid)
+    {
+        if (siteSurveyId == 0 || bssid == nullptr)
+        {
+            return nullptr;
+        }
+
+        const uint8_t apCount =
+            StorageService::GetSavedPhysicalAccessPointCount();
+
+        for (uint8_t apIndex = 0;
+             apIndex < apCount;
+             ++apIndex)
+        {
+            const StoredPhysicalAccessPointIndex *ap =
+                StorageService::GetSavedPhysicalAccessPointIndex(apIndex);
+
+            if (ap == nullptr ||
+                !ap->available ||
+                ap->siteSurveyId != siteSurveyId)
+            {
+                continue;
+            }
+
+            for (uint8_t radioIndex = 0;
+                 radioIndex < ap->associatedBssidCount;
+                 ++radioIndex)
+            {
+                if (BssidEquals(
+                        ap->associatedBssids[radioIndex].bytes,
+                        bssid))
+                {
+                    return ap;
+                }
+            }
+        }
+
+        return nullptr;
+    }
+}
+
 void MeasurementSetupScreen::Show(
     MeasurementSetupAction action)
 {
@@ -238,6 +328,39 @@ void MeasurementSetupScreen::Show(
         nullptr);
 
     RefreshFloorPlanButtonState();
+
+    apInventoryButton =
+        lv_btn_create(surveyActionRow);
+
+    lv_obj_set_width(
+        apInventoryButton,
+        0);
+
+    lv_obj_set_height(
+        apInventoryButton,
+        32);
+
+    lv_obj_set_flex_grow(
+        apInventoryButton,
+        1);
+
+    lv_obj_t *apInventoryLabel =
+        lv_label_create(apInventoryButton);
+
+    lv_label_set_text(
+        apInventoryLabel,
+        "AP Inventory");
+
+    lv_obj_center(
+        apInventoryLabel);
+
+    lv_obj_add_event_cb(
+        apInventoryButton,
+        MeasurementSetupScreen::HandleApInventoryButton,
+        LV_EVENT_CLICKED,
+        nullptr);
+
+    RefreshApInventoryButtonState();
 
     // ------------------------------------------------------------
     // Survey Point
@@ -540,6 +663,7 @@ HandleSavedSurveyButton(
 
     instance->RefreshSavedPointButtonState();
     instance->RefreshFloorPlanButtonState();
+    instance->RefreshApInventoryButtonState();
 
     Serial.printf(
         "MeasurementSetupScreen: Saved Site Survey "
@@ -578,6 +702,296 @@ HandleFloorPlansButton(
     }
 
     instance->OpenFloorPlanSelector();
+}
+
+void MeasurementSetupScreen::
+HandleApInventoryButton(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr ||
+        lv_event_get_code(event) != LV_EVENT_CLICKED)
+    {
+        return;
+    }
+
+    instance->OpenApInventory();
+}
+
+void MeasurementSetupScreen::
+HandleApInventoryClose(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr ||
+        lv_event_get_code(event) != LV_EVENT_CLICKED)
+    {
+        return;
+    }
+
+    instance->CloseApInventory();
+}
+
+void MeasurementSetupScreen::
+HandleNewApButton(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr ||
+        lv_event_get_code(event) != LV_EVENT_CLICKED)
+    {
+        return;
+    }
+
+    instance->OpenApEditor(0);
+}
+
+void MeasurementSetupScreen::
+HandleSavedApButton(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr ||
+        lv_event_get_code(event) != LV_EVENT_CLICKED)
+    {
+        return;
+    }
+
+    const uintptr_t rawId =
+        reinterpret_cast<uintptr_t>(
+            lv_event_get_user_data(event));
+
+    if (rawId == 0 || rawId > 0xFFFFFFFFUL)
+    {
+        return;
+    }
+
+    instance->OpenApEditor(
+        static_cast<uint32_t>(rawId));
+}
+
+void MeasurementSetupScreen::
+HandleApEditorCancel(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr ||
+        lv_event_get_code(event) != LV_EVENT_CLICKED)
+    {
+        return;
+    }
+
+    instance->CloseApEditor();
+}
+
+void MeasurementSetupScreen::
+HandleApBssidCheckbox(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr ||
+        lv_event_get_code(event) != LV_EVENT_VALUE_CHANGED)
+    {
+        return;
+    }
+
+    const uintptr_t rawIndex =
+        reinterpret_cast<uintptr_t>(
+            lv_event_get_user_data(event));
+
+    if (rawIndex >= MaxApNetworkSelections)
+    {
+        return;
+    }
+
+    const uint8_t networkIndex =
+        static_cast<uint8_t>(rawIndex);
+
+    lv_obj_t *checkbox =
+        lv_event_get_target(event);
+
+    if (checkbox == nullptr)
+    {
+        return;
+    }
+
+    const bool checked =
+        lv_obj_has_state(
+            checkbox,
+            LV_STATE_CHECKED);
+
+    const bool previouslySelected =
+        instance->apNetworkSelected[networkIndex];
+
+    if (checked && !previouslySelected)
+    {
+        if (static_cast<uint16_t>(
+                instance->apSelectedNetworkCount) +
+                instance->apUnseenBssidCount >=
+            MaxApBssids)
+        {
+            lv_obj_clear_state(
+                checkbox,
+                LV_STATE_CHECKED);
+
+            instance->SetApEditorStatus(
+                "Maximum 8 BSSIDs per physical AP");
+
+            return;
+        }
+
+        instance->apNetworkSelected[networkIndex] = true;
+        ++instance->apSelectedNetworkCount;
+    }
+    else if (!checked && previouslySelected)
+    {
+        instance->apNetworkSelected[networkIndex] = false;
+
+        if (instance->apSelectedNetworkCount > 0)
+        {
+            --instance->apSelectedNetworkCount;
+        }
+    }
+
+    char status[64] = {};
+
+    std::snprintf(
+        status,
+        sizeof(status),
+        "%u / %u BSSIDs selected",
+        static_cast<unsigned>(
+            instance->apSelectedNetworkCount +
+            instance->apUnseenBssidCount),
+        static_cast<unsigned>(MaxApBssids));
+
+    instance->SetApEditorStatus(status);
+}
+
+void MeasurementSetupScreen::
+HandleApSaveButton(
+    lv_event_t *event)
+{
+    if (instance == nullptr ||
+        event == nullptr ||
+        lv_event_get_code(event) != LV_EVENT_CLICKED ||
+        instance->apNameTextArea == nullptr ||
+        instance->apInventorySurveyId == 0)
+    {
+        return;
+    }
+
+    const char *name =
+        lv_textarea_get_text(
+            instance->apNameTextArea);
+
+    if (name == nullptr || name[0] == '\0')
+    {
+        instance->SetApEditorStatus(
+            "AP name is required");
+        instance->OpenTextEditor(
+            instance->apNameTextArea);
+        return;
+    }
+
+    StoredPhysicalAccessPointBssid bssids[
+        StoredPhysicalAccessPoint::MaxAssociatedBssids] = {};
+
+    uint8_t bssidCount = 0;
+
+    // Preserve previously associated BSSIDs that are not visible in the
+    // current scan. This prevents an edit from silently removing a radio
+    // simply because it is temporarily out of range.
+    for (uint8_t index = 0;
+         index < instance->apUnseenBssidCount &&
+         bssidCount < StoredPhysicalAccessPoint::MaxAssociatedBssids;
+         ++index)
+    {
+        std::memcpy(
+            bssids[bssidCount].bytes,
+            instance->apUnseenBssids[index],
+            WiFiNetworkInfo::BssidLength);
+
+        ++bssidCount;
+    }
+
+    const uint8_t networkCount =
+        WiFiService::GetNetworkCount();
+
+    for (uint8_t index = 0;
+         index < networkCount &&
+         index < MaxApNetworkSelections &&
+         bssidCount < StoredPhysicalAccessPoint::MaxAssociatedBssids;
+         ++index)
+    {
+        if (!instance->apNetworkSelected[index])
+        {
+            continue;
+        }
+
+        const WiFiNetworkInfo *network =
+            WiFiService::GetNetwork(index);
+
+        if (network == nullptr)
+        {
+            continue;
+        }
+
+        std::memcpy(
+            bssids[bssidCount].bytes,
+            network->bssid,
+            WiFiNetworkInfo::BssidLength);
+
+        ++bssidCount;
+    }
+
+    uint32_t accessPointId =
+        instance->apEditorAccessPointId;
+
+    if (accessPointId == 0)
+    {
+        uint32_t createdEpoch = 0;
+        TimeService::GetEpochTime(createdEpoch);
+
+        if (!StorageService::CreatePhysicalAccessPointRecord(
+                instance->apInventorySurveyId,
+                name,
+                createdEpoch,
+                accessPointId))
+        {
+            instance->SetApEditorStatus(
+                "Physical AP could not be created");
+            return;
+        }
+
+        instance->apEditorAccessPointId = accessPointId;
+
+        // The AP identity now exists. Prevent a retry after a later storage
+        // error from creating a duplicate AP with a different identity.
+        lv_obj_add_state(
+            instance->apNameTextArea,
+            LV_STATE_DISABLED);
+    }
+
+    if (!StorageService::SetPhysicalAccessPointBssids(
+            accessPointId,
+            bssids,
+            bssidCount))
+    {
+        instance->SetApEditorStatus(
+            "AP saved; BSSID update failed - retry Save");
+        return;
+    }
+
+    Serial.printf(
+        "MeasurementSetupScreen: Physical AP %lu saved "
+        "for Site Survey %lu with %u BSSID(s)\n",
+        static_cast<unsigned long>(accessPointId),
+        static_cast<unsigned long>(
+            instance->apInventorySurveyId),
+        bssidCount);
+
+    instance->CloseApEditor();
+    instance->RebuildApInventoryList();
 }
 
 void MeasurementSetupScreen::
@@ -1180,6 +1594,7 @@ void MeasurementSetupScreen::HandleTextAreaFocus(
         instance->ClearPendingMapPosition();
         instance->RefreshSavedPointButtonState();
         instance->RefreshFloorPlanButtonState();
+        instance->RefreshApInventoryButtonState();
     }
     else if (target ==
              instance->surveyPointTextArea)
@@ -3329,6 +3744,812 @@ void MeasurementSetupScreen::RefreshFloorPlanButtonState()
     }
 }
 
+void MeasurementSetupScreen::RefreshApInventoryButtonState()
+{
+    if (apInventoryButton == nullptr)
+    {
+        return;
+    }
+
+    const bool enabled =
+        GetPointContextSurveyId() != 0 &&
+        StorageService::IsAvailable() &&
+        !StorageService::IsExternalReadOnlyAccessActive();
+
+    if (enabled)
+    {
+        lv_obj_clear_state(
+            apInventoryButton,
+            LV_STATE_DISABLED);
+    }
+    else
+    {
+        lv_obj_add_state(
+            apInventoryButton,
+            LV_STATE_DISABLED);
+    }
+}
+
+void MeasurementSetupScreen::OpenApInventory()
+{
+    if (apInventoryRoot != nullptr)
+    {
+        return;
+    }
+
+    const uint32_t surveyId =
+        GetPointContextSurveyId();
+
+    if (surveyId == 0 ||
+        !StorageService::IsAvailable() ||
+        StorageService::IsExternalReadOnlyAccessActive())
+    {
+        return;
+    }
+
+    lv_obj_t *parent = lv_layer_top();
+
+    if (parent == nullptr)
+    {
+        return;
+    }
+
+    apInventorySurveyId = surveyId;
+
+    apInventoryRoot = lv_obj_create(parent);
+    lv_obj_set_pos(apInventoryRoot, 0, 0);
+    lv_obj_set_size(
+        apInventoryRoot,
+        lv_pct(100),
+        lv_pct(100));
+    lv_obj_set_style_pad_all(apInventoryRoot, 8, 0);
+    lv_obj_set_style_pad_row(apInventoryRoot, 6, 0);
+    lv_obj_set_flex_flow(
+        apInventoryRoot,
+        LV_FLEX_FLOW_COLUMN);
+    lv_obj_clear_flag(
+        apInventoryRoot,
+        LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *title =
+        lv_label_create(apInventoryRoot);
+
+    lv_label_set_text(
+        title,
+        "PHYSICAL AP INVENTORY");
+
+    lv_obj_t *actionRow =
+        lv_obj_create(apInventoryRoot);
+
+    lv_obj_remove_style_all(actionRow);
+    lv_obj_set_width(actionRow, lv_pct(100));
+    lv_obj_set_height(actionRow, 34);
+    lv_obj_set_flex_flow(
+        actionRow,
+        LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_column(actionRow, 8, 0);
+    lv_obj_clear_flag(
+        actionRow,
+        LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *newButton =
+        lv_btn_create(actionRow);
+    lv_obj_set_width(newButton, 0);
+    lv_obj_set_height(newButton, 32);
+    lv_obj_set_flex_grow(newButton, 1);
+
+    lv_obj_t *newLabel =
+        lv_label_create(newButton);
+    lv_label_set_text(newLabel, "+ New AP");
+    lv_obj_center(newLabel);
+
+    lv_obj_add_event_cb(
+        newButton,
+        MeasurementSetupScreen::HandleNewApButton,
+        LV_EVENT_CLICKED,
+        nullptr);
+
+    lv_obj_t *backButton =
+        lv_btn_create(actionRow);
+    lv_obj_set_width(backButton, 0);
+    lv_obj_set_height(backButton, 32);
+    lv_obj_set_flex_grow(backButton, 1);
+
+    lv_obj_t *backLabel =
+        lv_label_create(backButton);
+    lv_label_set_text(backLabel, "Back to Setup");
+    lv_obj_center(backLabel);
+
+    lv_obj_add_event_cb(
+        backButton,
+        MeasurementSetupScreen::HandleApInventoryClose,
+        LV_EVENT_CLICKED,
+        nullptr);
+
+    apInventoryList =
+        lv_obj_create(apInventoryRoot);
+
+    lv_obj_set_width(
+        apInventoryList,
+        lv_pct(100));
+    lv_obj_set_height(apInventoryList, 0);
+    lv_obj_set_flex_grow(apInventoryList, 1);
+    lv_obj_add_flag(
+        apInventoryList,
+        LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(
+        apInventoryList,
+        LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(
+        apInventoryList,
+        LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_style_pad_all(apInventoryList, 4, 0);
+    lv_obj_set_style_pad_row(apInventoryList, 4, 0);
+    lv_obj_set_flex_flow(
+        apInventoryList,
+        LV_FLEX_FLOW_COLUMN);
+
+    RebuildApInventoryList();
+    lv_obj_move_foreground(apInventoryRoot);
+}
+
+void MeasurementSetupScreen::CloseApInventory()
+{
+    CloseApEditor();
+
+    if (apInventoryRoot != nullptr)
+    {
+        lv_obj_add_flag(
+            apInventoryRoot,
+            LV_OBJ_FLAG_HIDDEN);
+        lv_obj_del_async(apInventoryRoot);
+    }
+
+    apInventoryRoot = nullptr;
+    apInventoryList = nullptr;
+    apInventorySurveyId = 0;
+}
+
+void MeasurementSetupScreen::RebuildApInventoryList()
+{
+    if (apInventoryList == nullptr ||
+        apInventorySurveyId == 0)
+    {
+        return;
+    }
+
+    lv_obj_clean(apInventoryList);
+
+    const uint8_t apCount =
+        StorageService::GetSavedPhysicalAccessPointCount();
+
+    uint8_t matchingCount = 0;
+
+    for (uint8_t index = 0;
+         index < apCount;
+         ++index)
+    {
+        const StoredPhysicalAccessPointIndex *ap =
+            StorageService::GetSavedPhysicalAccessPointIndex(index);
+
+        if (ap == nullptr ||
+            !ap->available ||
+            ap->siteSurveyId != apInventorySurveyId)
+        {
+            continue;
+        }
+
+        ++matchingCount;
+
+        lv_obj_t *button =
+            lv_btn_create(apInventoryList);
+
+        lv_obj_set_width(button, lv_pct(100));
+        lv_obj_set_height(button, 48);
+
+        lv_obj_add_event_cb(
+            button,
+            MeasurementSetupScreen::HandleSavedApButton,
+            LV_EVENT_CLICKED,
+            reinterpret_cast<void *>(
+                static_cast<uintptr_t>(
+                    ap->accessPointId)));
+
+        lv_obj_t *label =
+            lv_label_create(button);
+
+        lv_obj_set_width(label, lv_pct(100));
+        lv_label_set_long_mode(
+            label,
+            LV_LABEL_LONG_DOT);
+
+        char text[96] = {};
+
+        std::snprintf(
+            text,
+            sizeof(text),
+            "AP #%lu  %s\n%u BSSID%s%s",
+            static_cast<unsigned long>(
+                ap->accessPointId),
+            ap->name,
+            static_cast<unsigned>(
+                ap->associatedBssidCount),
+            ap->associatedBssidCount == 1
+                ? ""
+                : "s",
+            ap->floorPlanId == 0
+                ? "  |  Unmapped"
+                : "  |  Mapped");
+
+        lv_label_set_text(label, text);
+        lv_obj_center(label);
+    }
+
+    if (matchingCount == 0)
+    {
+        lv_obj_t *emptyLabel =
+            lv_label_create(apInventoryList);
+
+        lv_label_set_text(
+            emptyLabel,
+            "No Physical APs registered for this Site Survey.\n"
+            "Tap + New AP to create the first AP.");
+
+        lv_obj_set_width(
+            emptyLabel,
+            lv_pct(100));
+
+        lv_label_set_long_mode(
+            emptyLabel,
+            LV_LABEL_LONG_WRAP);
+
+        lv_obj_set_style_text_align(
+            emptyLabel,
+            LV_TEXT_ALIGN_CENTER,
+            0);
+    }
+}
+
+void MeasurementSetupScreen::OpenApEditor(
+    uint32_t accessPointId)
+{
+    if (apEditorRoot != nullptr ||
+        apInventorySurveyId == 0)
+    {
+        return;
+    }
+
+    StoredPhysicalAccessPoint existingAp{};
+
+    if (accessPointId != 0)
+    {
+        if (!StorageService::LoadPhysicalAccessPoint(
+                accessPointId,
+                existingAp) ||
+            !existingAp.available ||
+            existingAp.siteSurveyId != apInventorySurveyId)
+        {
+            return;
+        }
+    }
+
+    lv_obj_t *parent = lv_layer_top();
+
+    if (parent == nullptr)
+    {
+        return;
+    }
+
+    apEditorAccessPointId = accessPointId;
+    apSelectedNetworkCount = 0;
+    apUnseenBssidCount = 0;
+    std::memset(
+        apNetworkSelected,
+        0,
+        sizeof(apNetworkSelected));
+    std::memset(
+        apUnseenBssids,
+        0,
+        sizeof(apUnseenBssids));
+
+    apEditorRoot = lv_obj_create(parent);
+    lv_obj_set_pos(apEditorRoot, 0, 0);
+    lv_obj_set_size(
+        apEditorRoot,
+        lv_pct(100),
+        lv_pct(100));
+    lv_obj_set_style_pad_all(apEditorRoot, 8, 0);
+    lv_obj_set_style_pad_row(apEditorRoot, 4, 0);
+    lv_obj_set_flex_flow(
+        apEditorRoot,
+        LV_FLEX_FLOW_COLUMN);
+    lv_obj_clear_flag(
+        apEditorRoot,
+        LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *title =
+        lv_label_create(apEditorRoot);
+
+    if (accessPointId == 0)
+    {
+        lv_label_set_text(
+            title,
+            "NEW PHYSICAL AP");
+    }
+    else
+    {
+        char titleText[64] = {};
+        std::snprintf(
+            titleText,
+            sizeof(titleText),
+            "AP #%lu - EDIT RADIOS",
+            static_cast<unsigned long>(accessPointId));
+        lv_label_set_text(title, titleText);
+    }
+
+    apNameTextArea =
+        lv_textarea_create(apEditorRoot);
+
+    lv_obj_set_width(
+        apNameTextArea,
+        lv_pct(100));
+    lv_obj_set_height(apNameTextArea, 34);
+    lv_textarea_set_one_line(
+        apNameTextArea,
+        true);
+    lv_textarea_set_max_length(
+        apNameTextArea,
+        StoredPhysicalAccessPoint::NameCapacity - 1);
+    lv_textarea_set_placeholder_text(
+        apNameTextArea,
+        "AP name");
+
+    if (accessPointId == 0)
+    {
+        char defaultName[
+            StoredPhysicalAccessPoint::NameCapacity] = {};
+
+        std::snprintf(
+            defaultName,
+            sizeof(defaultName),
+            "AP-%02lu",
+            static_cast<unsigned long>(
+                StorageService::GetNextPhysicalAccessPointId()));
+
+        lv_textarea_set_text(
+            apNameTextArea,
+            defaultName);
+
+        lv_obj_add_event_cb(
+            apNameTextArea,
+            MeasurementSetupScreen::HandleTextAreaFocus,
+            LV_EVENT_FOCUSED,
+            nullptr);
+    }
+    else
+    {
+        lv_textarea_set_text(
+            apNameTextArea,
+            existingAp.name);
+
+        // 10.25B intentionally keeps AP identity/name immutable after
+        // creation. This screen edits radio associations only.
+        lv_obj_add_state(
+            apNameTextArea,
+            LV_STATE_DISABLED);
+    }
+
+    lv_obj_t *radioLabel =
+        lv_label_create(apEditorRoot);
+    lv_label_set_text(
+        radioLabel,
+        "Radios / BSSIDs from latest Wi-Fi scan");
+
+    apBssidList =
+        lv_obj_create(apEditorRoot);
+
+    lv_obj_set_width(apBssidList, lv_pct(100));
+    lv_obj_set_height(apBssidList, 0);
+    lv_obj_set_flex_grow(apBssidList, 1);
+    lv_obj_add_flag(
+        apBssidList,
+        LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(
+        apBssidList,
+        LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(
+        apBssidList,
+        LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_style_pad_all(apBssidList, 4, 0);
+    lv_obj_set_style_pad_row(apBssidList, 2, 0);
+    lv_obj_set_flex_flow(
+        apBssidList,
+        LV_FLEX_FLOW_COLUMN);
+
+    apEditorStatusLabel =
+        lv_label_create(apEditorRoot);
+
+    lv_obj_set_width(
+        apEditorStatusLabel,
+        lv_pct(100));
+    lv_label_set_long_mode(
+        apEditorStatusLabel,
+        LV_LABEL_LONG_DOT);
+
+    lv_obj_t *buttonRow =
+        lv_obj_create(apEditorRoot);
+
+    lv_obj_remove_style_all(buttonRow);
+    lv_obj_set_width(buttonRow, lv_pct(100));
+    lv_obj_set_height(buttonRow, 34);
+    lv_obj_set_flex_flow(
+        buttonRow,
+        LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_column(buttonRow, 8, 0);
+    lv_obj_clear_flag(
+        buttonRow,
+        LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *cancelButton =
+        lv_btn_create(buttonRow);
+    lv_obj_set_width(cancelButton, 0);
+    lv_obj_set_height(cancelButton, 32);
+    lv_obj_set_flex_grow(cancelButton, 1);
+
+    lv_obj_t *cancelLabel =
+        lv_label_create(cancelButton);
+    lv_label_set_text(cancelLabel, "Cancel");
+    lv_obj_center(cancelLabel);
+
+    lv_obj_add_event_cb(
+        cancelButton,
+        MeasurementSetupScreen::HandleApEditorCancel,
+        LV_EVENT_CLICKED,
+        nullptr);
+
+    lv_obj_t *saveButton =
+        lv_btn_create(buttonRow);
+    lv_obj_set_width(saveButton, 0);
+    lv_obj_set_height(saveButton, 32);
+    lv_obj_set_flex_grow(saveButton, 1);
+
+    lv_obj_t *saveLabel =
+        lv_label_create(saveButton);
+    lv_label_set_text(
+        saveLabel,
+        accessPointId == 0
+            ? "Create AP"
+            : "Save Radios");
+    lv_obj_center(saveLabel);
+
+    lv_obj_add_event_cb(
+        saveButton,
+        MeasurementSetupScreen::HandleApSaveButton,
+        LV_EVENT_CLICKED,
+        nullptr);
+
+    BuildApBssidList();
+    lv_obj_move_foreground(apEditorRoot);
+}
+
+void MeasurementSetupScreen::CloseApEditor()
+{
+    if (apEditorRoot != nullptr)
+    {
+        lv_obj_add_flag(
+            apEditorRoot,
+            LV_OBJ_FLAG_HIDDEN);
+        lv_obj_del_async(apEditorRoot);
+    }
+
+    apEditorRoot = nullptr;
+    apNameTextArea = nullptr;
+    apBssidList = nullptr;
+    apEditorStatusLabel = nullptr;
+    apEditorAccessPointId = 0;
+    apSelectedNetworkCount = 0;
+    apUnseenBssidCount = 0;
+    std::memset(
+        apNetworkSelected,
+        0,
+        sizeof(apNetworkSelected));
+    std::memset(
+        apUnseenBssids,
+        0,
+        sizeof(apUnseenBssids));
+}
+
+void MeasurementSetupScreen::BuildApBssidList()
+{
+    if (apBssidList == nullptr ||
+        apInventorySurveyId == 0)
+    {
+        return;
+    }
+
+    lv_obj_clean(apBssidList);
+    apSelectedNetworkCount = 0;
+    apUnseenBssidCount = 0;
+    std::memset(
+        apNetworkSelected,
+        0,
+        sizeof(apNetworkSelected));
+    std::memset(
+        apUnseenBssids,
+        0,
+        sizeof(apUnseenBssids));
+
+    StoredPhysicalAccessPoint existingAp{};
+    const bool editingExisting =
+        apEditorAccessPointId != 0 &&
+        StorageService::LoadPhysicalAccessPoint(
+            apEditorAccessPointId,
+            existingAp) &&
+        existingAp.available &&
+        existingAp.siteSurveyId == apInventorySurveyId;
+
+    const uint8_t networkCount =
+        WiFiService::GetNetworkCount();
+
+    if (editingExisting)
+    {
+        for (uint8_t radioIndex = 0;
+             radioIndex < existingAp.associatedBssidCount;
+             ++radioIndex)
+        {
+            bool visible = false;
+
+            for (uint8_t networkIndex = 0;
+                 networkIndex < networkCount &&
+                 networkIndex < MaxApNetworkSelections;
+                 ++networkIndex)
+            {
+                const WiFiNetworkInfo *network =
+                    WiFiService::GetNetwork(networkIndex);
+
+                if (network != nullptr &&
+                    BssidEquals(
+                        existingAp.associatedBssids[radioIndex].bytes,
+                        network->bssid))
+                {
+                    visible = true;
+                    break;
+                }
+            }
+
+            if (!visible &&
+                apUnseenBssidCount < MaxApBssids)
+            {
+                std::memcpy(
+                    apUnseenBssids[apUnseenBssidCount],
+                    existingAp.associatedBssids[radioIndex].bytes,
+                    BssidLength);
+
+                ++apUnseenBssidCount;
+            }
+        }
+    }
+
+    for (uint8_t index = 0;
+         index < apUnseenBssidCount;
+         ++index)
+    {
+        char bssidText[24] = {};
+        FormatBssid(
+            apUnseenBssids[index],
+            bssidText,
+            sizeof(bssidText));
+
+        lv_obj_t *storedLabel =
+            lv_label_create(apBssidList);
+
+        char text[64] = {};
+        std::snprintf(
+            text,
+            sizeof(text),
+            "Stored: %s  (not seen - preserved)",
+            bssidText);
+
+        lv_label_set_text(storedLabel, text);
+        lv_obj_set_width(storedLabel, lv_pct(100));
+        lv_label_set_long_mode(
+            storedLabel,
+            LV_LABEL_LONG_DOT);
+    }
+
+    for (uint8_t index = 0;
+         index < networkCount &&
+         index < MaxApNetworkSelections;
+         ++index)
+    {
+        const WiFiNetworkInfo *network =
+            WiFiService::GetNetwork(index);
+
+        if (network == nullptr)
+        {
+            continue;
+        }
+
+        const StoredPhysicalAccessPointIndex *owner =
+            FindPhysicalApBssidOwner(
+                apInventorySurveyId,
+                network->bssid);
+
+        const bool ownedByThisAp =
+            owner != nullptr &&
+            owner->accessPointId ==
+                apEditorAccessPointId;
+
+        const bool ownedByAnotherAp =
+            owner != nullptr &&
+            !ownedByThisAp;
+
+        lv_obj_t *checkbox =
+            lv_checkbox_create(apBssidList);
+
+        lv_obj_set_width(checkbox, lv_pct(100));
+
+        char bssidText[24] = {};
+        FormatBssid(
+            network->bssid,
+            bssidText,
+            sizeof(bssidText));
+
+        char text[112] = {};
+
+        const char *ssid =
+            network->hidden || network->ssid[0] == '\0'
+                ? "(hidden)"
+                : network->ssid;
+
+        if (ownedByAnotherAp)
+        {
+            std::snprintf(
+                text,
+                sizeof(text),
+                "%s | CH %u | %ld dBm | %s | AP #%lu",
+                ssid,
+                static_cast<unsigned>(network->channel),
+                static_cast<long>(network->rssi),
+                bssidText,
+                static_cast<unsigned long>(
+                    owner->accessPointId));
+        }
+        else
+        {
+            std::snprintf(
+                text,
+                sizeof(text),
+                "%s | CH %u | %ld dBm | %s",
+                ssid,
+                static_cast<unsigned>(network->channel),
+                static_cast<long>(network->rssi),
+                bssidText);
+        }
+
+        lv_checkbox_set_text(checkbox, text);
+
+        if (ownedByThisAp)
+        {
+            lv_obj_add_state(
+                checkbox,
+                LV_STATE_CHECKED);
+            apNetworkSelected[index] = true;
+            ++apSelectedNetworkCount;
+        }
+
+        if (ownedByAnotherAp)
+        {
+            lv_obj_add_state(
+                checkbox,
+                LV_STATE_DISABLED);
+        }
+        else
+        {
+            lv_obj_add_event_cb(
+                checkbox,
+                MeasurementSetupScreen::HandleApBssidCheckbox,
+                LV_EVENT_VALUE_CHANGED,
+                reinterpret_cast<void *>(
+                    static_cast<uintptr_t>(index)));
+        }
+    }
+
+    if (networkCount == 0)
+    {
+        lv_obj_t *emptyLabel =
+            lv_label_create(apBssidList);
+
+        lv_label_set_text(
+            emptyLabel,
+            "No cached Wi-Fi scan results.\n"
+            "The AP can be saved without BSSIDs and radios can be "
+            "associated after a scan.");
+
+        lv_obj_set_width(emptyLabel, lv_pct(100));
+        lv_label_set_long_mode(
+            emptyLabel,
+            LV_LABEL_LONG_WRAP);
+    }
+
+    char status[80] = {};
+
+    std::snprintf(
+        status,
+        sizeof(status),
+        "%u / %u BSSIDs selected%s",
+        static_cast<unsigned>(
+            apSelectedNetworkCount +
+            apUnseenBssidCount),
+        static_cast<unsigned>(MaxApBssids),
+        apUnseenBssidCount > 0
+            ? " (unseen stored radios preserved)"
+            : "");
+
+    SetApEditorStatus(status);
+}
+
+void MeasurementSetupScreen::SetApEditorStatus(
+    const char *text)
+{
+    if (apEditorStatusLabel == nullptr)
+    {
+        return;
+    }
+
+    lv_label_set_text(
+        apEditorStatusLabel,
+        text != nullptr ? text : "");
+}
+
+bool MeasurementSetupScreen::IsBssidSelectedForEditor(
+    const uint8_t *bssid) const
+{
+    if (bssid == nullptr)
+    {
+        return false;
+    }
+
+    for (uint8_t index = 0;
+         index < apUnseenBssidCount;
+         ++index)
+    {
+        if (BssidEquals(
+                apUnseenBssids[index],
+                bssid))
+        {
+            return true;
+        }
+    }
+
+    const uint8_t networkCount =
+        WiFiService::GetNetworkCount();
+
+    for (uint8_t index = 0;
+         index < networkCount &&
+         index < MaxApNetworkSelections;
+         ++index)
+    {
+        if (!apNetworkSelected[index])
+        {
+            continue;
+        }
+
+        const WiFiNetworkInfo *network =
+            WiFiService::GetNetwork(index);
+
+        if (network != nullptr &&
+            BssidEquals(
+                network->bssid,
+                bssid))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 uint32_t MeasurementSetupScreen::GetPointContextSurveyId() const
 {
     if (selectedSavedSurveyId != 0)
@@ -3770,6 +4991,7 @@ void MeasurementSetupScreen::CloseTextEditor(
     {
         RefreshSavedPointButtonState();
         RefreshFloorPlanButtonState();
+        RefreshApInventoryButtonState();
     }
 
     lv_obj_add_flag(
@@ -3821,6 +5043,8 @@ void MeasurementSetupScreen::Hide()
         return;
     }
 
+    CloseApInventory();
+
     if (surveySelectorRoot != nullptr)
     {
         lv_obj_del_async(
@@ -3852,6 +5076,7 @@ void MeasurementSetupScreen::Hide()
     root = nullptr;
     selectSavedSurveyButton = nullptr;
     floorPlansButton = nullptr;
+    apInventoryButton = nullptr;
     selectSavedPointButton = nullptr;
     siteSurveyTextArea = nullptr;
     surveyPointTextArea = nullptr;
